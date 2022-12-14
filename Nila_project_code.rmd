@@ -1,0 +1,1036 @@
+---
+title: SEA Model 
+author: NR
+editor_options: 
+  chunk_output_type: console
+---
+
+Setting up Libraries
+
+```{r}
+#Load data 
+rm(list=ls())
+
+#Load allll the libraries - use install packages if library doesn't work
+library(readxl)
+library(tidyverse)
+library(devtools)
+library(plyr) 
+library(Rcpp)
+library(reshape2) 
+library(inline)
+library(ggplot2)
+library(ggthemes)
+library(vegan)
+library(mizer)
+library(patchwork)
+library(cowplot)
+library(ggpubr)
+library(matrixStats)
+library(mizerMR)
+library(mizerExperimental)
+library(parallel)
+library(tictoc)
+library(readxl)
+library(mizerHowTo)
+```
+
+Loading param from Cami and formatting it to Mizer
+```{r}
+DFparam <- read_excel("mixed fihseries data/DFparam.xlsx")
+
+Species_params <- DFparam[,(-c(1,10,15,16,17,18,19,20,21,25,26,27,28,29,30,32,34,35,36,37))]
+Species_params$R_max <- Species_params$r_max
+
+
+Species_params<- Species_params[,(-c(15))]
+Species_params$biomass_observed <- Species_params$ssbObs
+avail_pp<- c(1.0, 0.2, 0.8, 0.2, 0.8, 0.2, 0.0, 0.3, 0.2, 0.2, 0.3, 0.2, 0.2, 0.3, 0.2, 0.2, 0.0, 0.0, 0.0)
+avail_bb <- c(0.0, 0.4, 0.0, 0.4, 0.0, 0.4, 0.8, 0.5, 0.4, 0.4, 0.5, 0.4, 0.4, 0.5, 0.4, 0.4, 0.8, 0.8, 0.8)
+Species_params$interaction_resource<- avail_pp+avail_bb
+Species_params$ssbObs <- NULL
+
+Species_params$l_inf <- exp(log(Species_params$w_inf/Species_params$a)/Species_params$b)
+
+Species_params$FGroup<- c("bathypelagic<30cm", "demersal30-90cm", "demersal30-90cm","bathydemersal30-90cm", "benthopelagic30-90cm", "benthopelagic30-90cm", "shark>=90cm","demersal30-90cm","flatfish<90cm", "benthopelagic30-90cm", "benthopelagic30-90cm", "bathypelagic30-90cm", "benthopelagic30-90cm", "benthopelagic>=90cm", "benthopelagic>=90cm", "bathydemersal>=90cm", "shark>=90cm", "shark>=90cm", "shark>=90cm" )
+
+# Fishing params 
+Gear_params <- DFparam[,c(2,17,18,19,20,21,28)]
+
+trawl <- function(w,W25_S,W50_S,...){
+
+  SR <- W50_S - W25_S
+  S1 <- W50_S*log(3)/SR
+  S2 <- S1 / W50_S
+  sel <-1 / (1 + exp(S1 - S2*w))
+  return(sel)
+}
+
+gillnet<-function(w,W50_B,sigma_B,...){
+  sel<-exp(-(w-W50_B)^2/sigma_B^2)
+  return(sel)
+}
+
+# not working for now ....
+unique(Gear_params$species)
+demersal <-c("centroberyx affinis",  "nemadactylus macropterus","platycephalus richardsoni", "zeus faber" , "seriolella brama","hoplostethus atlanticus", "macruronus novaezelandiae", "seriolella punctata", "rexea solandri","genypterus blacodes")
+pelagic <- c("myctophids","sillago flindersi","nototodarus gouldi","helicolenus barathri","trachurus declivis","squalus spp.", "pristiophorus cirratus","mustelus antarcticus", "galeorhinus galeus" )
+
+str(Gear_params)
+Gear_params$gear=ifelse(Gear_params$species %in% demersal, "demersal", "pelagic")
+# end not working 
+ 
+Gear_params$gear<-"pelagic"
+Gear_params[c(6,8:16),'gear']<-"demersal"
+head(Gear_params)
+```
+
+
+
+```{r}
+#Gear_params$sel_func<- "sigmoid_length" 
+
+#Gear_params$l25<- exp(log(Gear_params$W25_S/Species_params$a)/Species_params$b)
+#Gear_params$l50<- exp(log(Gear_params$W50_S/Species_params$a)/Species_params$b)
+
+
+
+params <- newMultispeciesParams(species_params = Species_params, gear_params = Gear_params, kappa = 0.002191539)
+
+
+```
+
+```{r}
+plotSpectra(params)
+Simparam <- project(params, effort = 1)
+plotSpectra(Simparam)
+plotBiomass(Simparam)
+
+
+```
+
+Code here shows that the biomass is decreasing drastically - need to change the R_max value
+```{r}
+
+params@species_params$R_max<- params@resource_params$kappa*params@species_params$w_inf^-1
+Simparam<-project(params, effort = 1)
+plotSpectra(Simparam)
+plotBiomass(Simparam)
+
+```
+
+All Species Co-exist : Except one species - Squalus spp.
+
+```{r}
+plotFeedingLevel(Simparam, include_critical = TRUE)
+plotGrowthCurves(Simparam, species_panel = TRUE)
+plotlySpectra(Simparam)
+
+plotlyPredMort(Simparam)
+plotDiet(Simparam)#, species = "squalus spp.")
+plotEnergyBudget(Simparam)
+```
+
+Loading and plotting : catch and effort (Fish-MIP data)
+
+
+```{r}
+effort_his <- read.csv(file = "effort_histsoc_1841_2010_regional_models.csv") 
+catch_his <- read.csv(file = "calibration_catch_histsoc_1850_2004_regional_models.csv")
+
+effort_SEA <- filter(effort_his,region=="SEAustralia.mizer")#subset - only industrial , all fishing countries, gear - trawl bottom and gillnet (check the  Fgroups), plot per gear and Fgroups- facet_wrap().
+
+effort_tot <- effort_SEA
+
+
+effort_tot<- effort_tot %>% 
+  group_by(Year,FGroup) %>% 
+  dplyr::summarise(TotalEffort=sum(NomActive)) %>% 
+  ungroup()
+
+ head(effort_tot)
+
+ggplot(data = effort_tot, aes(x=Year,y=TotalEffort, color = FGroup))+
+  geom_line()
+
+catch_SEA <- filter(catch_his, region=="SEAustralia.mizer")
+
+catch_tot<- catch_SEA
+catch_tot$Totalcatches <- catch_tot$Reported+catch_tot$IUU+catch_tot$Discards
+ head(catch_tot)#checked-works
+ 
+catch_tot <- catch_tot %>%
+  group_by(Year) %>%
+  dplyr::summarise(Totalcatches=sum(Totalcatches))
+
+ggplot(data = catch_tot, aes(x=Year,y=Totalcatches))+
+  geom_line()
+
+#ggplot(data = effort_SEA, aes(x= Year, y= NomActive, group = 1))
+#+geom_line(linetype="solid", color="forestgreen")+ theme_minimal()+labs(x="Year" ,y="Fishing effort", title = "Fishing effort (1841-2010)- SE-A")+theme(plot.title = element_text(hjust = 0.5,size = 10,face = "bold"))
+
+#ggplot(data = catch_SEA, aes(x= Year, y= Reported, group = 1))+geom_line(linetype="solid", color="turquoise4")+ theme_minimal()+labs(x="Year" ,y="Catch (reported)", title = "Catches(1920-2004)- SE-A")+theme(plot.title = element_text(hjust = 0.5,size = 10,face = "bold"))
+
+
+
+```
+Creating a subset of effort and catch from the above fishmip data - with only industrial sector and trawl bottom and gillnet gear.
+
+```{r}
+
+# try filter only cephalopods, demersal, bathydemersal, flatfish, rays, shark
+
+effort_sub <- filter(effort_SEA, Sector == "Industrial",Gear =="Trawl_Bottom" | Gear == "Gillnets", FGroup %in% c("cephalopods", "bathydemersal<30cm", "bathydemersal>=90cm","bathydemersal30-90cm", "demersal<30cm", "demersal>=90cm", "demersal30-90cm", "flatfish<90cm", "rays<90cm", "rays>=90cm", "shark>=90cm", "bathypelagic<30cm", "bathypelagic30-90cm", "benthopelagic30-90cm", "benthopelagic>=90cm"))
+# Gear %in% c("Trawl_Bottom", "Gillnets")
+
+head(effort_sub)
+
+effort_tt<- effort_sub
+
+
+effort_tt<- effort_tt %>% 
+  group_by(Year,Gear,FGroup) %>% 
+  dplyr::summarise(TotalEffort=sum(NomActive)) %>%
+  ungroup()
+
+head(effort_tt)
+
+ggplot(data = effort_tt, aes(x = Year, y = TotalEffort,color = FGroup)) +
+  geom_line( size = 1) +
+  labs(title = "Gear") + 
+  facet_wrap(~ Gear)
+
+
+catch_sub <- filter(catch_SEA,FGroup %in% c("cephalopods", "bathydemersal<30cm", "bathydemersal>=90cm","bathydemersal30-90cm", "demersal<30cm", "demersal>=90cm", "demersal30-90cm", "flatfish<90cm", "rays<90cm", "rays>=90cm", "shark>=90cm", "bathypelagic<30cm", "bathypelagic30-90cm", "benthopelagic30-90cm", "benthopelagic>=90cm"))
+
+head(catch_sub)
+
+catch_tt<- catch_sub
+catch_tt$Totalcatches <- catch_tt$Reported+catch_tt$IUU+catch_tt$Discards
+
+catch_tt<- catch_tt %>%
+  group_by(Year,FGroup) %>%
+  dplyr::summarise(Totalcatches=sum(Totalcatches)) %>%
+  ungroup()
+
+head(catch_tt)
+
+ggplot(data = catch_tt, aes(x = Year, y = Totalcatches,color = FGroup)) +
+  geom_line( size = 1) +
+  labs(title = "FGroup") 
+  
+#ggplot(data = catch_tt, aes(x = Year, y = Totalcatches,color = FGroup)) + geom_line( size = 1) +labs(title = "SAUP") +facet_wrap(~ SAUP) - each SAUP has only 1 observation - too many plots with too little data .  
+
+
+  #  platycephalus - flatfish , 17-19,7 - sharks, 3 - ceph, 6- demersal <30, - match species to Fgroup and gear. - set up gear params- gear/year- 18
+ 
+
+```
+
+The aim of this script is to analyse fishing effort and demand data to find a relationship between the two variables and to develop future scenarios of fishing effort based on demand. 
+
+Data origin: 
+1. Fishing effort data from Rousseau et al (in prep), aggregated and extrapolated by Camilla Novaglio for FisHMIP use.  
+2. Demand data from FAO Food Balance Sheet downloaded on 21/11/2022
+3. Population and GDP data from ISIMIP server, e.g.: 
+scp -r b381217@levante.dkrz.de:/work/bb0820/ISIMIP/ISIMIP3b/InputData/socioeconomic/pop/ssp1/population_ssp1_national_annual_2015_2100.csv /Users/camillan/Desktop/FAO_report_plots/chp3_socioeconomy/Data/
+
+Steps: 
+1. Consider fishing effort and demand for Australia (or for South East Australia, depending on data aggregation) demersal fish groups.
+2. Investigate the relationship between fishing effort an demand using linear and additive models. Is the rate of change in effort proportional to the rate of change in demand? 
+3. Consider two scenarios of population and GDP, SSP1-mitigation and SSP5-high-emission, for Australia. 
+4. Following the approach in Naylor et al. 2021 (), calculate future demand for demersal fish in Australia based on current demand and future growth in population and GDP in Australia: 
+$$
+C1 = C0*(Y1/Y0) + eps*((G1 - G0)/G0)
+$$
+Where C1 = demand in t+1, C0 = current demand, Y0 = current population, Y1 = population in t+1, eps = elasticity, G0 = current GDP, G1 = GDP in t+1. 
+5. Building on the approach in Naylor et al. 2021, calculate future fishing effort for demersal fish in Australia based on current effort and future growth in demand. the justification for using this approach is that there is a linear relationship between demand and effort as demonstrated in point 2: 
+$$
+E1 = E0*(C1/C0)
+$$
+Where E1 = effort in t+1 and E0 = current effort. 
+
+Outputs: 
+1. Plots of demand and effort data and projections.  
+2. Data. Use food_final adn effort_final as forcing for regional model of South East Australia. 
+
+## load packages and themes  
+
+```{r load libraries and data}
+
+rm(list=ls())
+
+library(tidyverse)
+library(mgcv)
+library(scales)
+library(patchwork)
+
+summarise <-dplyr::summarise
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+
+
+dir = "/Users/raveendransankaran/Documents/prepare-Nilar14/"
+
+```
+
+## effort and demand data for Australia  
+
+```{r data exploration}
+
+effort <- read.csv(file = paste0(dir,"effort_histsoc_1841_2010_regional_models.csv"))
+fao<-read.csv(file = paste0(dir, "FAOSTAT_data_en_10-27-2022.csv"))
+
+# # subset SE au and the demersal group 
+
+effort_au<-effort %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("flatfish<90cm", "demersal<30cm","demersal>=90cm", "flatfish>=90cm","demersal30-90cm")) %>% 
+  filter(Year >= 1961) %>% 
+  group_by(Year) %>% 
+  summarise(effort = sum(NomActive)) %>% 
+  ungroup()
+
+# # subset SE au and the demersal group for FAO data 
+# unique(fao$Element) # following Naylor et al 2021, consider "Food supply quantity (kg/capita/yr)" as per-capita consumption/demand.  
+
+fao_au<-fao %>% 
+  filter(Year <= 2010) %>% 
+  filter(Element %in% c("Food supply quantity (kg/capita/yr)"), Item %in% c("Demersal Fish")) %>%  # OR Food ?
+  dplyr::select(Year, Item, Element, Value, Unit)
+
+```
+
+## relationship between effort and demand 
+
+There is a positive relationship between effort and demand. This relationship is stronger when considering the *Food* category compared to the *Food supply quantity (kg/capita/yr)* category. The relationship explains about 50% of the variability in the data. While we use *Food supply quantity (kg/capita/yr)* to calculate future demand based on population and GDP, we multiply *Food supply quantity (kg/capita/yr)* by *population* and obtain *Food* to calculate future effort based on demand. 
+
+```{r}
+
+fao_au<-fao_au %>% 
+  mutate(Data = "Food") %>% 
+  select(Year, Value, Data)
+
+effort_au<- effort_au %>% 
+  mutate(Data = "Effort") %>% 
+  rename(Value = effort) %>%
+  select(Year, Value, Data)
+
+all_data<-fao_au %>% 
+  full_join(effort_au) %>% 
+  spread(value = Value, key = Data) 
+
+ggplot(all_data, aes(x = Food, y = Effort))+
+  geom_point()+
+  geom_smooth(method = "lm")
+
+m<-lm(Food~Effort, data = all_data)
+summary(m) 
+
+mb<-gam(Food~Effort, data = all_data)
+summary(mb) 
+
+# all data 
+all_data <-all_data %>% 
+  `colnames<-`(c("year", "effort", "food")) %>%
+  mutate(year = as.character(year)) # to match pop and gdp format
+
+```
+
+## popoulation and GDDP data for Australia 
+
+```{r}
+
+# POPULATION
+# changed format of files: delete first rows for readability: 
+#
+# national population in 10^6 people
+# (commas in the country name have been replaced by ;)
+#
+
+pop_hist <- read.csv(file = paste0(dir,"population_histsoc_national_annual_1950_2014.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = pop, key = year) %>% 
+  mutate(year = gsub("X", "", year))
+
+pop_ssp1 <- read.csv(file = paste0(dir,"population_ssp1_national_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = pop, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(pop_hist) %>% 
+  mutate(pop = pop*1000000) %>% 
+  arrange(year)
+
+pop_ssp5 <- read.csv(file = paste0(dir,"population_ssp5_national_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = pop, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(pop_hist) %>% 
+  mutate(pop = pop*1000000) %>% 
+  arrange(year)
+
+# GDP 
+# changed format of files: delete first rows for readability: 
+#																																																								
+# national GDP in PPP 2005 Int $													
+# (commas in the country name have been replaced by ; )									
+#																
+
+gdp_hist <- read.csv(file = paste0(dir,"gdp-countrylevel_histsoc_annual_1960_2014.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = gdp, key = year) %>% 
+  mutate(year = gsub("X", "", year))
+
+gdp_ssp1 <- read.csv(file = paste0(dir,"gdp-countrylevel_ssp1_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = gdp, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(gdp_hist) %>% 
+  arrange(year)
+
+gdp_ssp5 <- read.csv(file = paste0(dir,"gdp-countrylevel_ssp5_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = gdp, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(gdp_hist) %>% 
+  arrange(year)
+
+proj_ssp1<-pop_ssp1 %>% 
+  full_join(gdp_ssp1) %>% 
+  full_join(all_data) %>% 
+  mutate(food_extr_2010 = NA, 
+         effort_extr_2010 = NA, 
+         food_extr_1961 = NA, 
+         effort_extr_1961 = NA) %>% 
+  filter(year>1960)
+
+proj_ssp5<-pop_ssp5 %>% 
+  full_join(gdp_ssp5) %>% 
+  full_join(all_data) %>% 
+  mutate(food_extr_2010 = NA, 
+         effort_extr_2010 = NA, 
+         food_extr_1961 = NA, 
+         effort_extr_1961 = NA) %>% 
+  filter(year>1960)
+
+```
+
+## function to calculate future demand and effort 
+
+```{r}
+
+proj_demand_effort<-function(data){
+  
+  # data = proj_ssp1
+  
+  # from Naylor et al 2021
+  # # e.g. demand for year 2011 based on 2010
+  # # C1 = to estimate 
+  # C0 = data %>% filter(year == 2010) %>% select(food)
+  # Y0 = data %>% filter(year == 2010) %>% select(pop)
+  # Y1 = data %>% filter(year == 2011) %>% select(pop)
+  # eps = 0.4
+  # G0 = data %>% filter(year == 2010) %>% select(gdp)
+  # G1 = data %>% filter(year == 2011) %>% select(gdp)
+  # 
+  # C1 = C0*(Y1/Y0) + eps*((G1 - G0)/G0)
+
+  eps = 0.2 # here used for calibration
+  
+  data[1,'food_extr_1961']<-data[1,'food']
+
+  for(i in 1:nrow(data)){
+    data[i+1, 'food_extr_1961']<-data[i, 'food_extr_1961']*(data[i+1, 'pop']/data[i, 'pop']) + eps*((data[i+1, 'gdp']-data[i, 'gdp'])/data[i, 'gdp'])
+  }
+
+  # add multiplier # NOTE this is not very important as you are using end values of demand that are not scaled.  
+  data<-data %>% 
+    mutate(food_extr_1961 = food_extr_1961*0.7) %>% 
+    filter(!is.na(year))
+
+  # start projections using 2010 as first value 
+  data[50,'food_extr_2010']<-data[50,'food']
+
+  for(i in 50:nrow(data)){
+    data[i+1, 'food_extr_2010']<-data[i, 'food_extr_2010']*(data[i+1, 'pop']/data[i, 'pop']) + eps*((data[i+1, 'gdp']-data[i, 'gdp'])/data[i, 'gdp'])
+  }
+
+  #  multiplier not necessary
+  data<-data %>% 
+    filter(!is.na(year))
+
+  # final demand trend = FAO data 1961-2010, extrapolation using 2010 as first year 2010-2100
+  data<-data %>% 
+    mutate(food_final = ifelse(is.na(food), food_extr_2010, food), 
+           food_final = food_final*pop) # demand in kg/year
+
+  # calculate effort based on demand and following Naylor's approach 
+  # C1 = C0*(Y1/Y0)
+
+  data_eff<-data
+  data_eff[1,'effort_extr_1961']<-data_eff[1,'effort']
+
+  for(i in 1:nrow(data_eff)){
+    data_eff[i+1, 'effort_extr_1961']<-data_eff[i, 'effort_extr_1961']*(data_eff[i+1, 'food_final']/data_eff[i, 'food_final'])
+  }
+
+  # add multiplier - NOTE: this multiplier is important as effort_final is effort 1961-2010 and effort_extr_1961 2010-2100 because we want to make sure historical effort is linked to historical demand.   
+  data_eff<-data_eff %>% 
+    mutate(effort_extr_1961 = effort_extr_1961*1.5) %>% # NOTE - previously done with food_final instead of food_final*pop, so multiplier was 2.5
+    filter(!is.na(year))
+
+  # do the same and calculate from 2010 
+  data_eff[50,'effort_extr_2010']<-data_eff[50,'effort']
+
+  for(i in 50:nrow(data_eff)){
+    data_eff[i+1, 'effort_extr_2010']<-data_eff[i, 'effort_extr_2010']*(data_eff[i+1, 'food_final']/data_eff[i, 'food_final'])
+  }
+
+  data_eff<-data_eff %>% 
+    filter(!is.na(year))
+
+  # final effort trend = Effort data 1961-2010, extrapolation using 1961 as first year 2010-2100
+  data_eff<-data_eff %>% 
+    mutate(effort_final = ifelse(is.na(effort), food_extr_1961, effort))
+  
+  return(data_eff = data_eff)
+  
+}
+
+```
+
+## apply function to 2 projections 
+
+This is to apply the function above to both SSPs. The result is demand and effort projections to 2100 under SSP1 and SSP5. 
+
+```{r}
+
+ssp1<-proj_demand_effort(proj_ssp1) %>% 
+  mutate(scenarios = ifelse(year <=2010, "Historical", "ssp1"))
+ssp5<-proj_demand_effort(proj_ssp5)%>% 
+  mutate(scenarios = ifelse(year <=2010, "Historical", "ssp5"))
+
+ssp_all<-ssp1 %>% 
+  full_join(ssp5)
+
+```
+
+## plot projections
+
+```{r}
+
+df_plot<-ssp_all %>% 
+  gather(value = value, key = data, -year, -scenarios) %>% 
+  mutate(origin = case_when(data == "pop" ~ "ISIMIP", 
+                            data == "gdp" ~ "ISIMIP", 
+                            data == "effort" ~ "Rousseau_et_al_2023", 
+                            data == "Food" ~ "FAO", 
+                            data == "food_extr_2010" ~ "Extrapolated", 
+                            data == "food_extr_1961" ~ "Extrapolated", 
+                            data == "effort_extr_2010" ~ "Extrapolated",
+                            data == "effort_extr_1961" ~ "Extrapolated",
+                            data == "food_final" & year <=2010 ~ "FAO", 
+                            data == "food_final" & year >2010 ~ "Extrapolated",
+                            data == "effort_final" & year <=2010 ~ "Rousseau_et_al_2023", 
+                            data == "effort_final" & year >2010 ~ "Extrapolated"), 
+         year = as.numeric(year))
+  
+# fix scenarios for effort 
+df_plot$scenarios<-ifelse(df_plot$data == "effort_extr_1961" & df_plot$year <=2010, "Historical extrapolated", df_plot$scenarios)
+
+# we use food_final which considers the original data from 1961-2010 (food) and the projections from 2011 to 2100 (food_extr_2010) multiplied by population 
+
+plot_demand<-ggplot(df_plot, aes(x = year, y = value))+
+  geom_point(data = filter(df_plot, data %in% c("food_final"), origin == "FAO"), aes(color = scenarios), size = 1)+
+  geom_line(data = filter(df_plot, data %in% c("food_final"), origin == "Extrapolated"), aes(color = scenarios), size = 1)+
+  scale_y_continuous(labels = unit_format(unit = "M", scale = 1e-6))+
+  scale_color_manual(name = "Scenarios", values = c("black", "blue", "red"), labels = c("Historical data", "SSP1-mitigation", "SSP5-high-emission"), )+
+  my_theme +
+  ylab("Demand (kg/y)")+
+  xlab("Year")
+ 
+# we use effort_extr_1961 which considers projections between 1961 and 2100 
+# we use effort which considers observations between 1961 and 2010 
+
+plot_effort<-ggplot(filter(df_plot, data %in% c("effort", "effort_extr_1961")), aes(x = year, y = value))+
+  geom_point(data = filter(df_plot, data %in% c("effort")), aes(color = scenarios), size = 1)+
+  geom_line(data = filter(df_plot, data %in% c("effort_extr_1961")), aes(color = scenarios), size = 1)+
+  scale_y_continuous(labels = unit_format(unit = "M", scale = 1e-6))+
+  scale_color_manual(name = "Scenarios", values = c("black", "grey","blue", "red"), labels = c("Historical data", "Historical projections", "SSP1-mitigation", "SSP5-high-emission"), )+
+  my_theme +
+  ylab("Effort (DkW)")+
+  xlab("Year") 
+
+# remove legend from other plots 
+plot_demand<-plot_demand + theme(legend.position = "none")
+
+jpeg("projections_demand_effort.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+plot_demand/plot_effort + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A')
+dev.off()
+
+```
+
+## save data ---- 
+
+```{r}
+
+getwd()
+library(data.table)
+fwrite(x = df_plot, file.path(dir, "Demand_effort_ssp1_ssp5.csv"))
+```
+
+
+##Creating Effort matrix
+```{r}
+
+#ssp1 
+Fishing_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
+                 ncol = length(unique(Gear_params$gear)),
+                 dimnames = list("time" = unique(ssp1$year), 
+                                 "effort" = unique(Gear_params$gear)))
+  
+Fishing_ssp1[,2]<- ssp1$effort_final         
+Fishing_ssp1[,1]<- 1
+
+#ssp5
+
+Fishing_ssp5<- matrix(NA, nrow = length(unique(ssp5$year)), 
+                 ncol = length(unique(Gear_params$gear)),
+                 dimnames = list("time" = unique(ssp5$year), 
+                                 "effort" = unique(Gear_params$gear)))
+  
+Fishing_ssp5[,2]<- ssp5$effort_final         
+Fishing_ssp5[,1]<- 1
+```
+
+##Forcing the above two effort scenarios on regional model - SouthEast Australia model
+
+```{r}
+
+params2<- newMultispeciesParams( species_params = Species_params, gear_params = Gear_params, kappa = 0.002191539)
+
+sim<- project(params2,t_max=200)
+plotBiomass(sim)
+
+params3<- params2
+
+params3@initial_n <- sim@n[200,,]
+
+sim2<- project(params3)
+plotBiomass(sim2)
+
+#SSP1
+sim_ssp1<- project(params3, effort = Fishing_ssp1)
+plot(sim_ssp1)
+plotSpectra(sim_ssp1)
+plotBiomass(sim_ssp1)
+
+#SSP5
+sim_ssp5 <- project(params3, effort = Fishing_ssp5)
+plot(sim_ssp5)
+plotSpectra(sim_ssp5)
+plotBiomass(sim_ssp5)
+```
+
+
+
+Using R_max to calibrate the model following - North Sea Model Example - mizerHowTo
+
+```{r}
+params2<- params
+species_params(params2)$erepro <- .01
+sim_uncalibrated <- project(params2)
+plotCalibration(sim_uncalibrated, stage = 1)
+params_guessed <- params2
+species_params(params_guessed)$R_max <- resource_params(params_guessed)$kappa *species_params(params_guessed)$w_inf^-1
+sim_guessed <- project(params_guessed)
+plotCalibration(sim_guessed)
+
+```
+
+Further refining the model 
+```{r}
+params_optim <- params
+vary <-  log10(params_optim@species_params$R_max) 
+getError(vary = vary, params = params_optim, dat = params_optim@species_params$biomass_observed)
+params_optim<-setParams(params_optim)
+noCores <- parallel::detectCores() - 1 
+cl <- parallel::makeCluster(noCores, setup_timeout = 0.5)
+setDefaultCluster(cl = cl)
+clusterExport(cl, varlist = "cl",envir=environment())
+
+clusterEvalQ(cl, {
+ library(mizerExperimental)
+ library(optimParallel)
+  })
+
+optim_result <- optimParallel::optimParallel(par=vary,getError, params=params_optim, dat = params_optim@species_params$biomass_observed, data_type = "SSB", method   ="L-BFGS-B", lower=c(rep(3,dim(params_optim@species_params)[1])), upper= c(rep(15,dim(params_optim@species_params)[1])),
+                                             parallel=list(loginfo=TRUE, forward=TRUE))
+
+stopCluster(cl)
+
+params_optim@species_params$R_max <- 10^optim_result$par 
+sim_optim <- project(params_optim)
+
+plotSpectra(sim_optim)
+
+```
+
+Functions from Romain's Toothfish model 
+
+```{r}
+fastOptim <- function(params)
+{
+# create set of params for the optimisation process
+params_optim <- params
+vary <-  log10(params_optim@species_params$R_max) # variable to explore
+params_optim<-setParams(params_optim)
+# set up workers
+noCores <- parallel::detectCores() - 1 # keep some spare core
+cl <- parallel::makeCluster(noCores, setup_timeout = 0.5)
+setDefaultCluster(cl = cl)
+clusterExport(cl, varlist = "cl",envir=environment())
+clusterEvalQ(cl, {
+  library(mizerExperimental)
+  library(optimParallel)
+})
+optim_result <- optimParallel::optimParallel(par=vary,getError,params=params_optim, dat = params_optim@species_params$biomass_observed, data_type = "SSB", method   ="L-BFGS-B", lower=c(rep(3,dim(params_optim@species_params)[1])), upper= c(rep(15,dim(params_optim@species_params)[1])),
+                                             parallel=list(loginfo=TRUE, forward=TRUE))
+stopCluster(cl)
+params_optim@species_params$R_max <- 10^optim_result$par 
+sim_optim <- project(params_optim, t_max = 2000)
+return(sim_optim)
+}
+```
+
+
+```{r}
+# function running tuneParams function in a row for a quick start to a calibration
+fastCalib <- function(params, match = F)
+{
+params <- calibrateBiomass(params) # changes kappa and rmax
+if(match) params <- matchBiomasses(params) # set rmax to inf and adjust erepro
+params <- steady(params, tol = 0.001)
+sim <- project(params, t_max = 1000)
+return(sim)
+}
+```
+
+
+```{r}
+# removing effort = 1 so always using intial effort and removing /1e6 so everything is in grams
+getError2 <- function (vary, params, dat, data_type = "catch", tol = 0.1, 
+    timetorun = 10) 
+{
+    params@species_params$R_max[] <- 10^vary[1:length(params@species_params$R_max)]
+    params <- setParams(params)
+    params <- projectToSteady(params, distance_func = distanceSSLogN, 
+        tol = tol, t_max = 200, return_sim = F)
+    sim <- project(params, t_max = timetorun, progress_bar = F)
+    if (data_type == "SSB") {
+        output <- getSSB(sim)[timetorun, ]
+    }
+    if (data_type == "catch") {
+        output <- getYield(sim)[timetorun, ]
+    }
+    pred <- log(output)
+    dat <- log(dat)
+    discrep <- pred - dat
+    discrep <- (sum(discrep^2))
+    return(discrep)
+}
+```
+
+
+```{r}
+getErrorTime <- function(vary,params,dat,effort,env=state,tol = 0.1) {
+  
+  params@species_params$R_max[1:9]<-10^vary[1:9]
+  params@species_params$erepro[1:9]<-vary[10:18]
+  params@gear_params$catchability[1]<-vary[19]
+  
+  params <- setParams(params)
+  # run to steady state and update params
+  # env$params<- projectToSteady(env$params, distance_func = distanceSSLogN,
+  #                 tol = tol, t_max = 200,return_sim = F)
+  
+  params_steady<- projectToSteady(params, distance_func = distanceSSLogN,
+                                  tol = tol, t_max = 200,return_sim = F)
+  
+  #run time-varying effort model tthough time with new erepro
+  
+  simt <- project(params_steady, effort = effort, initial_n =  params_steady@initial_n, initial_n_pp = params_steady@initial_n_pp)
+  
+  # get biomass through time
+  biomass <- sweep(simt@n, 3, simt@params@w * simt@params@dw, "*")
+  
+  #get yield through time from model:
+  
+  f_gear<-getFMortGear(params,effort)
+  yield_species_gear <- apply(sweep(f_gear, c(1, 3, 4), biomass, "*"),
+                              c(1, 2, 3), sum)
+  # yield_species_gear
+  
+  yield_species <-apply(yield_species_gear, c(1, 3), sum)
+  
+  yield_frame <- melt(yield_species)
+  
+  # leave out spin up and change units to tonnes    
+  # y<-yield_frame[yield_frame$time >= 1947,]
+  
+  # disregard zeroes - these were NAs only filled in to run the model   
+  
+  obs<-dat$catchT
+  pred<-yield_frame$value[1:18] # only selecting D.ele for now
+  
+  # sum of squared errors, could use  log-scale of predictions and data (could change this or use other error or likelihood options)
+  
+  error <- sum((log(pred) - log(obs))^2,na.rm=T)
+  
+  # can use a strong penalty on the error to ensure we reach a minimum of 10% of the data (biomass or catch) for each species
+  # if(any(pred < 0.1*dat)) discrep <- discrep + 1e10
+  
+  return(error)
+  
+}
+```
+
+
+### Set of functions using size selectivity of the data
+
+```{r}
+# this function adds a lower boundary to selected size
+plotBiomassObservedVsModelCustom <- function (object, species = NULL, ratio = FALSE, log_scale = TRUE, 
+    return_data = FALSE, labels = TRUE, show_unobserved = FALSE) 
+{
+    if (is(object, "MizerSim")) {
+        params = object@params
+        n <- finalN(object)
+    }
+    else if (is(object, "MizerParams")) {
+        params = object
+        n <- initialN(params)
+    }
+    else {
+        stop("You have not provided a valid mizerSim or mizerParams object.")
+    }
+    sp_params <- params@species_params
+    species = valid_species_arg(object, species)
+    if (length(species) == 0) 
+        stop("No species selected, please fix.")
+    row_select = match(species, sp_params$species)
+    if (!"biomass_observed" %in% names(sp_params)) {
+        stop("You have not provided values for the column 'biomass_observed' ", 
+            "in the mizerParams/mizerSim object.")
+    }
+    else if (!is.numeric(sp_params$biomass_observed)) {
+        stop("The column 'biomass_observed' in the mizerParams/mizerSim object", 
+            " is not numeric, please fix.")
+    }
+    else {
+        biomass_observed = sp_params$biomass_observed
+    }
+    
+    cutoffLow <- sp_params$biomass_cutoffLow[row_select]
+    if (is.null(cutoffLow)) {
+        cutoffLow = rep(0, length(species))
+    }
+    else if (!is.numeric(cutoffLow)) {
+        stop("params@species_params$biomass_cutoffLow is not numeric, \",\n                 \"please fix.")
+    }
+    cutoffLow[is.na(cutoffLow)] <- 0
+    
+    cutoffHigh <- sp_params$biomass_cutoffHigh[row_select]
+    if (is.null(cutoffHigh)) {
+        cutoffHigh = rep(0, length(species))
+    }
+    else if (!is.numeric(cutoffHigh)) {
+        stop("params@species_params$biomass_cutoffHigh is not numeric, \",\n                 \"please fix.")
+    }
+    cutoffHigh[is.na(cutoffHigh)] <- 0
+    
+    sim_biomass = rep(0, length(species))
+    for (j in 1:length(species)) {
+        sim_biomass[j] = sum((n[row_select[j], ] * params@w * 
+            params@dw)[params@w >= cutoffLow[j] & cutoffHigh[j] >= params@w])
+    }
+    dummy = data.frame(species = species, model = sim_biomass, 
+        observed = biomass_observed[row_select]) %>% mutate(species = factor(species, 
+        levels = species), is_observed = !is.na(observed) & observed > 
+        0, observed = case_when(is_observed ~ observed, !is_observed ~ 
+        model), ratio = model/observed)
+    if (sum(dummy$is_observed) == 0) {
+        cat(paste("There are no observed biomasses to compare to model,", 
+            "only plotting model biomasses.", sep = "\n"))
+    }
+    if (!show_unobserved) {
+        dummy <- filter(dummy, is_observed)
+    }
+    if (return_data == TRUE) 
+        return(dummy)
+    tre <- round(sum(abs(1 - dummy$ratio)), digits = 3)
+    caption <- paste0("Total relative error = ", tre)
+    if (any(!dummy$is_observed)) {
+        caption <- paste(caption, "\n Open circles represent species without biomass observation.")
+    }
+    if (ratio == FALSE) {
+        gg <- ggplot(data = dummy, aes(x = observed, y = model, 
+            colour = species, shape = is_observed)) + geom_abline(aes(intercept = 0, 
+            slope = 1), colour = "purple", linetype = "dashed", 
+            size = 1.3) + geom_point(size = 3) + labs(y = "model biomass [g]") + 
+            coord_cartesian(ylim = range(dummy$model, dummy$observed))
+    }
+    else {
+        gg <- ggplot(data = dummy, aes(x = observed, y = ratio, 
+            colour = species, shape = is_observed)) + geom_hline(aes(yintercept = 1), 
+            linetype = "dashed", colour = "purple", 
+            size = 1.3) + geom_point(size = 3) + labs(y = "model biomass / observed biomass") + 
+            coord_cartesian(ylim = range(dummy$ratio))
+    }
+    gg <- gg + labs(x = "observed biomass [g]", caption = caption) + 
+        scale_colour_manual(values = getColours(params)[dummy$species]) + 
+        scale_shape_manual(values = c(`TRUE` = 19, `FALSE` = 1)) + 
+        guides(shape = "none")
+    if (log_scale == TRUE & ratio == FALSE) {
+        gg = gg + scale_x_log10() + scale_y_log10()
+    }
+    if (log_scale == TRUE & ratio == TRUE) {
+        gg = gg + scale_x_log10()
+    }
+    if (labels == TRUE) {
+        gg = gg + ggrepel::geom_label_repel(aes(label = species), 
+            box.padding = 0.35, point.padding = 0.5, segment.color = "grey50", 
+            show.legend = FALSE, max.overlaps = Inf, seed = 42)
+    }
+    gg
+}
+```
+
+
+```{r}
+# adapting cutoff here too
+calibrateBiomassCustom <- function (params) 
+{
+  if ((!("biomass_observed" %in% names(params@species_params))) || 
+      all(is.na(params@species_params$biomass_observed))) {
+    return(params)
+  }
+  no_sp <- nrow(params@species_params)
+  
+  cutoffLow <- params@species_params$biomass_cutoffLow
+  if (is.null(cutoffLow)) 
+    cutoffLow <- rep(0, no_sp)
+  cutoffLow[is.na(cutoffLow)] <- 0
+  
+  cutoffHigh <- params@species_params$biomass_cutoffHigh
+  if (is.null(cutoffHigh)) 
+    cutoffHigh <- rep(0, no_sp)
+  cutoffHigh[is.na(cutoffHigh)] <- 0
+  
+  observed <- params@species_params$biomass_observed
+  observed_total <- sum(observed, na.rm = TRUE)
+  sp_observed <- which(!is.na(observed))
+  model_total <- 0
+  for (sp_idx in sp_observed) {
+    model_total <- model_total + sum((params@initial_n[sp_idx, 
+    ] * params@w * params@dw)[params@w >= cutoffLow[sp_idx] & cutoffHigh[sp_idx] >= params@w])
+  }
+  scaleModel(params, factor = observed_total/model_total)
+}
+```
+
+```{r}
+# same as above
+matchBiomassCustom <- function (params, species = NULL) 
+{
+    if (!("biomass_observed" %in% names(params@species_params))) {
+        return(params)
+    }
+    species <- valid_species_arg(params, species = species, return.logical = TRUE) & 
+        !is.na(params@species_params$biomass_observed) & params@species_params$biomass_observed > 
+        0
+    for (sp in (1:nrow(params@species_params))[species]) {
+        cutoffLow <- params@species_params$biomass_cutoffLow[[sp]]
+        if (is.null(cutoffLow) || is.na(cutoffLow)) {
+            cutoffLow <- 0
+        }
+                    cutoffHigh <- params@species_params$biomass_cutoffHigh[[sp]]
+        if (is.null(cutoffHigh) || is.na(cutoffHigh)) {
+            cutoffHigh <- 0
+        }
+        
+        total <- sum((params@initial_n[sp, ] * params@w * params@dw)[params@w >= cutoffLow & cutoffHigh >= params@w])
+        factor <- params@species_params$biomass_observed[[sp]]/total
+        params@initial_n[sp, ] <- params@initial_n[sp, ] * factor
+    }
+    setBevertonHolt(params)
+}
+```
+
+
+```{r}
+getErrorCustom <- function(vary, params, dat, tol = 0.001, 
+    timetorun = 10)
+{
+  params@species_params$R_max[1:9]<-10^vary[1:9]
+  params@species_params$erepro[1:9]<-vary[10:18]
+  params@species_params$interaction_resource[1:9] <- vary[19:27]
+  params <- setParams(params)
+  interaction <- params@interaction
+  interaction[] <- matrix(vary[28:108],nrow = 9) # stop at 54 if looking only at 3 biggest species
+  
+  params <- setInteraction(params,interaction)
+    params <- projectToSteady(params, distance_func = distanceSSLogN, 
+        tol = tol, t_max = 200, return_sim = F)
+    
+    sim <- project(params, t_max = timetorun, progress_bar = F)
+    
+    sim_biomass = rep(0, length(params@species_params$species))
+    
+        cutoffLow <- params@species_params$biomass_cutoffLow
+    if (is.null(cutoffLow)) 
+        cutoffLow <- rep(0, no_sp)
+    cutoffLow[is.na(cutoffLow)] <- 0
+    
+        cutoffHigh <- params@species_params$biomass_cutoffHigh
+    if (is.null(cutoffHigh)) 
+        cutoffHigh <- rep(0, no_sp)
+    cutoffHigh[is.na(cutoffHigh)] <- 0
+        
+    for (j in 1:length(sim_biomass)) {
+        sim_biomass[j] = sum((sim@n[dim(sim@n)[1],j,] * params@w * 
+            params@dw)[params@w >= cutoffLow[j] & cutoffHigh[j] >= params@w])
+    }
+    
+    pred <- log(sim_biomass)
+    dat <- log(dat)
+    discrep <- pred - dat
+    discrep <- (sum(discrep^2))
+    return(discrep)
+}
+```
+```
+
+```{r}
+Param=DFparam 
+effort_histsoc_1950_2014<- read_csv("effort_histsoc_1950_2014.csv")
+
+
+```
+
+#Data 
+

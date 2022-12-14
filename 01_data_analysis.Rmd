@@ -1,0 +1,377 @@
+---
+title: "01_data_analysis"
+output: html_document
+date: "2022-11-21"
+editor_options: NR
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+Analysing fishing effort and demand data to find a relationship between the two variables. 
+
+Fishing effort data from Camilla - Global data-set built for regional models 
+Demand data from FAO Food Balance Sheet downloaded on 21/11/2022
+
+## load data 
+
+
+```{r load libraries and data}
+
+rm(list=ls())
+library(tidyverse)
+
+summarise <-dplyr::summarise
+
+effort <- read.csv(file = "effort_histsoc_1841_2010_regional_models.csv") 
+catch <- read.csv(file = "calibration_catch_histsoc_1850_2004_regional_models.csv")
+fao<-read.csv("Human forcings/FAOSTAT_data_en_10-27-2022.csv")
+
+```
+
+## subsetting to needs 
+
+```{r data exploration}
+
+# subset SE au and the demersal group 
+head(effort)
+unique(effort$FGroup) # see Sea Around Us website for FGroup codes and meaning 
+range(effort$Year)
+
+effort_au<-effort %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("flatfish<90cm", "demersal<30cm","demersal>=90cm", "flatfish>=90cm","demersal30-90cm")) %>% 
+  filter(Year >= 1961) %>% 
+  group_by(Year) %>% 
+  summarise(effort = sum(NomActive)) %>% 
+  ungroup()
+
+
+# subset SE au and the demersal group for FAO data 
+
+head(fao)
+unique(fao$Domain.Code) # only fish
+unique(fao$Element) # interested in production only as a proxy for consummption which is  aproxy for demand - WARNING CHECK ! production or supply?? 
+unique(fao$Item)
+unique(fao$Flag.Description)
+
+range(fao$Year)
+
+fao_au<-fao %>% 
+  filter(Year <= 2010) %>% 
+  filter(Element %in% c("Production"), Item %in% c("Demersal Fish")) %>% 
+  dplyr::select(Year, Value) # Item, Element, Value, Unit)
+
+head(fao_au)
+```
+
+
+
+## percentage changes 
+
+```{r perc}
+
+ref<-effort_au %>% 
+  filter(Year >=1961, Year <=1970) %>% 
+  # filter(Year >=1990, Year <=1999) %>% 
+  summarise(ref = mean(effort))
+
+# 1998 414% compared to 1960s # value in mean 60s = 3762976, value in 1998= 19358216
+# 1998 31% compared to 1990s # value in mid 90s = 14720592; value in 1998= 19358216
+effort_au<-effort_au %>% 
+  mutate(perc = ((effort - ref$ref)/ref$ref)*100)
+
+View(effort_au)
+
+ref<-fao_au %>% 
+  # filter(Year >=1961, Year <=1970)
+  filter(Year >=1990, Year <=1999)%>% 
+  summarise(ref = mean(Value))
+
+fao_au<-fao_au %>% 
+  mutate(perc = ((Value - ref$ref)/ref$ref)*100)
+
+```
+
+## plot data 
+
+```{r plot}
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+ 
+plot_effort<-ggplot(effort_au, aes(x=Year, y=effort)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  geom_line()+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  my_theme+
+  xlab("Year")+
+  ylab("Effort (Kw*Day)")+
+  ggtitle("Effort")
+# facet_grid(MEM~ESM)
+
+plot_effort
+
+
+plot_fao<-ggplot(fao_au, aes(x=Year, y=Value)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  geom_line()+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  my_theme+
+  xlab("Year")+
+  ylab("Production (tonness)")+
+  ggtitle("Production")
+# facet_grid(MEM~ESM)
+
+plot_fao
+
+library("patchwork")
+
+jpeg("Effort_production.jpg", width = 5, height = 6, units = "in", res = 300, bg = "transparent")
+plot_effort/plot_fao
+dev.off()
+
+# plot relative values 
+
+# combine  data
+# 1 create a column id and standardise column names across datasets 
+
+fao_au$Data<- "Production"
+effort_au$Data<-"Effort"
+all_data<-fao_au %>% 
+  full_join(effort_au)
+
+all_data
+
+plot_all<-ggplot(all_data, aes(x=Year, y=perc, color =Data, shape = Data)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  geom_line()+
+  scale_color_manual(values = c("red", "blue"))+
+  scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  my_theme+
+  xlab("Year")+
+  ylab("Change (%)")+
+  ggtitle("Change in demersal fishing effort and demersal fish production relative to 1990-1999")
+# facet_grid(MEM~ESM)
+
+plot_all
+
+jpeg("Effort_production_together1990.jpg", width = 6, height = 5, units = "in", res = 300, bg = "transparent")
+plot_all
+dev.off()
+
+# WARNING - this plot should be done using the values of effort and production, not the % changes. 
+# start from the 2 separate dataset. 
+all_data2<-all_data %>% 
+  select(Year, perc, Data) %>% 
+  spread(key=Data, value =perc)
+
+plot_all_correlation<-ggplot(all_data2, aes(x=Effort, y = Production)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  # geom_line()+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  my_theme+
+  xlab("Effort (%)")+
+  ylab("Production (%)")+
+  ggtitle("Change in demersal fishing effort and demersal fish production relative to 1990-1999")
+# facet_grid(MEM~ESM)
+
+plot_all_correlation
+
+```
+
+###Using the original values to plot the correlation 
+
+```{r}
+
+
+effort_au$Value <- effort_au$effort
+
+fao_au$Data<- "Production"
+effort_au$Data<-"Effort"
+
+
+full_data<-fao_au %>% 
+  full_join(effort_au)
+
+full_data2<-full_data %>% 
+  select(Year, Value, Data) %>% 
+  spread(key=Data, value =Value)
+
+#Plotting all correlation
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+
+plot_full_correlation<-ggplot(full_data2, aes(x=Effort, y = Production)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  # geom_line()+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  my_theme+
+  xlab("Effort (Kw*Day)")+
+  ylab("Production (tonnes)")+
+  ggtitle("Change in demersal fishing effort and demersal fish production relative to 1961-2010")
+# facet_grid(MEM~ESM)
+
+plot_full_correlation
+
+
+#jpeg("Effort_production_correlation1961-2010.jpg", width = 6, height = 5, units = "in", res = 300, bg = "transparent")
+#plot_full_correlation
+#dev.off()
+
+```
+
+## statistical analysis to quantify relationship. e.g. linear model 
+
+```{r linear model}
+
+#putting the data together data frame
+df <- data.frame( x= full_data2$Effort,
+       y = full_data2$Production)
+			
+
+# fit linear model
+linear_model <- lm(y ~ x^2, data=df)
+
+# view summary of linear model
+summary(linear_model)
+
+plot(linear_model)
+
+plot_full_correlation
+abline(linear_model)
+
+# this is a simple linear model to check the correlation - let us now plot the regression line in ggplot 
+
+```
+
+
+##PLotting single linear regression line in a ggplot 
+
+```{r single linear regression}
+
+
+
+plot_regression<-ggplot(full_data2, aes(x=Effort, y = Production)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  # geom_line()+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  geom_smooth(method='lm', se = FALSE)+
+  my_theme+
+  xlab("Effort (Kw*Day)")+
+  ylab("Production (tonnes)")+
+  ggtitle("Linear Regression Plot")
+  
+  
+  plot_regression
+  
+#jpeg("Linear_Regression_Plot_Effort_and_Production.jpg", width = 6, height = 5, units = "in", res = 300, bg = "transparent")
+#plot_regression
+#dev.off()
+
+
+  
+  # alternatively use co-eeficient and intercept 
+  
+  #plot_regression2<-ggplot(full_data2, aes(x=Effort, y = Production)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  #geom_point(size = 1) +
+  # geom_line()+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+ #geom_abline(slope = coef(linear_model) [["Production"]],
+             #intercept = coef(linear_model) [["(Intercept)"]]) +
+  #my_theme+
+  #xlab("Effort (Kw*Day)")+
+  #ylab("Production (tonnes)")+
+  #ggtitle("Linear Regression PLot") 
+  
+  #did not work : Error - "Error in coef(linear_model)[["Production"]] : subscript out of bounds"
+  
+
+
+```
+
+##PLotting multiple linear regression line in a ggplot 
+
+```{r multiple regression}
+
+df2 <- full_data2
+
+# create multiple linear model
+
+
+lm_fit <- lm(Production~ Effort, data=df2)
+summary(lm_fit)
+
+# save predictions of the model in the new data frame 
+# together with variable you want to plot against
+predicted_df <- data.frame(pred = predict(lm_fit, df2), production = df2$Production) 
+
+# this is the predicted line of multiple linear regression
+
+plot_multiple<-ggplot(data = df2, aes(x=Effort, y = Production)) +
+  # geom_hline(yintercept = 0, linetype = "dashed", color = "grey50", size = 0.3)+
+  geom_point(size = 1) +
+  geom_line( data = predicted_df, aes(x=pred, y= production))+
+  # scale_color_manual(values = c("red", "blue"))+
+  # scale_shape_manual(values = c(16,15))+
+  # coord_flip() +
+  # ylim(-1,1)+
+  my_theme+
+  xlab("Effort (Kw*Day)")+
+  ylab("Production (tonnes)")+
+  ggtitle(" Multiple Linear Regression PLot")
+
+plot_multiple
+
+# getting a single line - doesn't make sense : check the formula again 
+
+```
+
+

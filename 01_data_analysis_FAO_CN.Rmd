@@ -1,0 +1,556 @@
+---
+title: "01_data_analysis"
+output:
+  pdf_document: default
+  html_document: default
+date: '2022-11-21'
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+The aim of this script is to analyse fishing effort and demand data to find a relationship between the two variables and to develop future scenarios of fishing effort based on demand. 
+
+Data origin: 
+1. Fishing effort data from Rousseau et al (in prep), aggregated and extrapolated by Camilla Novaglio for FisHMIP use.  
+2. Demand data from FAO Food Balance Sheet downloaded on 21/11/2022
+3. Population and GDP data from ISIMIP server, e.g.: 
+scp -r b381217@levante.dkrz.de:/work/bb0820/ISIMIP/ISIMIP3b/InputData/socioeconomic/pop/ssp1/population_ssp1_national_annual_2015_2100.csv /Users/camillan/Desktop/FAO_report_plots/chp3_socioeconomy/Data/
+
+Steps: 
+1. Consider fishing effort and demand for Australia (or for South East Australia, depending on data aggregation) demersal fish groups.
+2. Investigate the relationship between fishing effort an demand using linear and additive models. Is the rate of change in effort proportional to the rate of change in demand? 
+3. Consider two scenarios of population and GDP, SSP1-mitigation and SSP5-high-emission, for Australia. 
+4. Following the approach in Naylor et al. 2021 (), calculate future demand for demersal fish in Australia based on current demand and future growth in population and GDP in Australia: 
+$$
+C1 = C0*(Y1/Y0) + eps*((G1 - G0)/G0)
+$$
+Where C1 = demand in t+1, C0 = current demand, Y0 = current population, Y1 = population in t+1, eps = elasticity, G0 = current GDP, G1 = GDP in t+1. 
+5. Building on the approach in Naylor et al. 2021, calculate future fishing effort for demersal fish in Australia based on current effort and future growth in demand. the justification for using this approach is that there is a linear relationship between demand and effort as demonstrated in point 2: 
+$$
+E1 = E0*(C1/C0)
+$$
+Where E1 = effort in t+1 and E0 = current effort. 
+
+Outputs: 
+1. Plots of demand and effort data and projections.  
+2. Data. Use food_final adn effort_final as forcing for regional model of South East Australia. 
+
+## load packages and themes  
+
+```{r load libraries and data}
+
+rm(list=ls())
+
+library(tidyverse)
+library(mgcv)
+library(scales)
+library(patchwork)
+
+summarise <-dplyr::summarise
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+
+
+dir = "/Users/raveendransankaran/Documents/prepare-Nilar14/"
+
+```
+
+## effort and demand data for Australia  
+
+```{r data exploration}
+
+effort <- read.csv(file = paste0(dir,"effort_histsoc_1841_2010_regional_models.csv"))
+fao<-read.csv(file = paste0(dir, "FAOSTAT_data_en_10-27-2022.csv"))
+
+# # subset SE au and the demersal group 
+
+effort_au<-effort %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("flatfish<90cm", "demersal<30cm","demersal>=90cm", "flatfish>=90cm","demersal30-90cm")) %>% 
+  filter(Year >= 1961) %>% 
+  group_by(Year) %>% 
+  summarise(effort = sum(NomActive)) %>% 
+  ungroup()
+
+# # subset SE au and the demersal group for FAO data 
+# unique(fao$Element) # following Naylor et al 2021, consider "Food supply quantity (kg/capita/yr)" as per-capita consumption/demand.  
+
+fao_au<-fao %>% 
+  filter(Year <= 2010) %>% 
+  filter(Element %in% c("Food supply quantity (kg/capita/yr)"), Item %in% c("Demersal Fish")) %>%  # OR Food ?
+  dplyr::select(Year, Item, Element, Value, Unit)
+
+```
+
+## relationship between effort and demand 
+
+There is a positive relationship between effort and demand. This relationship is stronger when considering the *Food* category compared to the *Food supply quantity (kg/capita/yr)* category. The relationship explains about 50% of the variability in the data. While we use *Food supply quantity (kg/capita/yr)* to calculate future demand based on population and GDP, we multiply *Food supply quantity (kg/capita/yr)* by *population* and obtain *Food* to calculate future effort based on demand. 
+
+```{r}
+
+fao_au<-fao_au %>% 
+  mutate(Data = "Food") %>% 
+  select(Year, Value, Data)
+
+effort_au<- effort_au %>% 
+  mutate(Data = "Effort") %>% 
+  rename(Value = effort) %>%
+  select(Year, Value, Data)
+
+all_data<-fao_au %>% 
+  full_join(effort_au) %>% 
+  spread(value = Value, key = Data) 
+
+ggplot(all_data, aes(x = Food, y = Effort))+
+  geom_point()+
+  geom_smooth(method = "lm")
+
+m<-lm(Food~Effort, data = all_data)
+summary(m) 
+
+mb<-gam(Food~Effort, data = all_data)
+summary(mb) 
+
+# all data 
+all_data <-all_data %>% 
+  `colnames<-`(c("year", "effort", "food")) %>%
+  mutate(year = as.character(year)) # to match pop and gdp format
+
+```
+
+## popoulation and GDDP data for Australia 
+
+```{r}
+
+# POPULATION
+# changed format of files: delete first rows for readability: 
+#
+# national population in 10^6 people
+# (commas in the country name have been replaced by ;)
+#
+
+pop_hist <- read.csv(file = paste0(dir,"population_histsoc_national_annual_1950_2014.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = pop, key = year) %>% 
+  mutate(year = gsub("X", "", year))
+
+pop_ssp1 <- read.csv(file = paste0(dir,"population_ssp1_national_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = pop, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(pop_hist) %>% 
+  mutate(pop = pop*1000000) %>% 
+  arrange(year)
+
+pop_ssp5 <- read.csv(file = paste0(dir,"population_ssp5_national_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = pop, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(pop_hist) %>% 
+  mutate(pop = pop*1000000) %>% 
+  arrange(year)
+
+# GDP 
+# changed format of files: delete first rows for readability: 
+#																																																								
+# national GDP in PPP 2005 Int $													
+# (commas in the country name have been replaced by ; )									
+#																
+
+gdp_hist <- read.csv(file = paste0(dir,"gdp-countrylevel_histsoc_annual_1960_2014.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = gdp, key = year) %>% 
+  mutate(year = gsub("X", "", year))
+
+gdp_ssp1 <- read.csv(file = paste0(dir,"gdp-countrylevel_ssp1_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = gdp, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(gdp_hist) %>% 
+  arrange(year)
+
+gdp_ssp5 <- read.csv(file = paste0(dir,"gdp-countrylevel_ssp5_annual_2015_2100.csv")) %>% 
+  filter(country == "Australia") %>% 
+  select(-iso, -country) %>% 
+  gather(value = gdp, key = year) %>% 
+  mutate(year = gsub("X", "", year)) %>% 
+  full_join(gdp_hist) %>% 
+  arrange(year)
+
+proj_ssp1<-pop_ssp1 %>% 
+  full_join(gdp_ssp1) %>% 
+  full_join(all_data) %>% 
+  mutate(food_extr_2010 = NA, 
+         effort_extr_2010 = NA, 
+         food_extr_1961 = NA, 
+         effort_extr_1961 = NA) %>% 
+  filter(year>1960)
+
+proj_ssp5<-pop_ssp5 %>% 
+  full_join(gdp_ssp5) %>% 
+  full_join(all_data) %>% 
+  mutate(food_extr_2010 = NA, 
+         effort_extr_2010 = NA, 
+         food_extr_1961 = NA, 
+         effort_extr_1961 = NA) %>% 
+  filter(year>1960)
+
+```
+
+## function to calculate future demand and effort 
+
+```{r}
+
+proj_demand_effort<-function(data){
+  
+  # data = proj_ssp1
+  
+  # from Naylor et al 2021
+  # # e.g. demand for year 2011 based on 2010
+  # # C1 = to estimate 
+  # C0 = data %>% filter(year == 2010) %>% select(food)
+  # Y0 = data %>% filter(year == 2010) %>% select(pop)
+  # Y1 = data %>% filter(year == 2011) %>% select(pop)
+  # eps = 0.4
+  # G0 = data %>% filter(year == 2010) %>% select(gdp)
+  # G1 = data %>% filter(year == 2011) %>% select(gdp)
+  # 
+  # C1 = C0*(Y1/Y0) + eps*((G1 - G0)/G0)
+
+  eps = 0.2 # here used for calibration
+  
+  data[1,'food_extr_1961']<-data[1,'food']
+
+  for(i in 1:nrow(data)){
+    data[i+1, 'food_extr_1961']<-data[i, 'food_extr_1961']*(data[i+1, 'pop']/data[i, 'pop']) + eps*((data[i+1, 'gdp']-data[i, 'gdp'])/data[i, 'gdp'])
+  }
+
+  # add multiplier # NOTE this is not very important as you are using end values of demand that are not scaled.  
+  data<-data %>% 
+    mutate(food_extr_1961 = food_extr_1961*0.7) %>% 
+    filter(!is.na(year))
+
+  # start projections using 2010 as first value 
+  data[50,'food_extr_2010']<-data[50,'food']
+
+  for(i in 50:nrow(data)){
+    data[i+1, 'food_extr_2010']<-data[i, 'food_extr_2010']*(data[i+1, 'pop']/data[i, 'pop']) + eps*((data[i+1, 'gdp']-data[i, 'gdp'])/data[i, 'gdp'])
+  }
+
+  #  multiplier not necessary
+  data<-data %>% 
+    filter(!is.na(year))
+
+  # final demand trend = FAO data 1961-2010, extrapolation using 2010 as first year 2010-2100
+  data<-data %>% 
+    mutate(food_final = ifelse(is.na(food), food_extr_2010, food), 
+           food_final = food_final*pop) # demand in kg/year
+
+  # calculate effort based on demand and following Naylor's approach 
+  # C1 = C0*(Y1/Y0)
+
+  data_eff<-data
+  data_eff[1,'effort_extr_1961']<-data_eff[1,'effort']
+
+  for(i in 1:nrow(data_eff)){
+    data_eff[i+1, 'effort_extr_1961']<-data_eff[i, 'effort_extr_1961']*(data_eff[i+1, 'food_final']/data_eff[i, 'food_final'])
+  }
+
+  # add multiplier - NOTE: this multiplier is important as effort_final is effort 1961-2010 and effort_extr_1961 2010-2100 because we want to make sure historical effort is linked to historical demand.   
+  data_eff<-data_eff %>% 
+    mutate(effort_extr_1961 = effort_extr_1961*1.5) %>% # NOTE - previously done with food_final instead of food_final*pop, so multiplier was 2.5
+    filter(!is.na(year))
+
+  # do the same and calculate from 2010 
+  data_eff[50,'effort_extr_2010']<-data_eff[50,'effort']
+
+  for(i in 50:nrow(data_eff)){
+    data_eff[i+1, 'effort_extr_2010']<-data_eff[i, 'effort_extr_2010']*(data_eff[i+1, 'food_final']/data_eff[i, 'food_final'])
+  }
+
+  data_eff<-data_eff %>% 
+    filter(!is.na(year))
+
+  # final effort trend = Effort data 1961-2010, extrapolation using 1961 as first year 2010-2100
+  data_eff<-data_eff %>% 
+    mutate(effort_final = ifelse(is.na(effort), food_extr_1961, effort))
+  
+  return(data_eff = data_eff)
+  
+}
+
+```
+
+## apply function to 2 projections 
+
+This is to apply the function above to both SSPs. The result is demand and effort projections to 2100 under SSP1 and SSP5. 
+
+```{r}
+
+ssp1<-proj_demand_effort(proj_ssp1) %>% 
+  mutate(scenarios = ifelse(year <=2010, "Historical", "ssp1"))
+ssp5<-proj_demand_effort(proj_ssp5)%>% 
+  mutate(scenarios = ifelse(year <=2010, "Historical", "ssp5"))
+
+ssp_all<-ssp1 %>% 
+  full_join(ssp5)
+
+```
+
+## plot projections
+
+```{r}
+
+df_plot<-ssp_all %>% 
+  gather(value = value, key = data, -year, -scenarios) %>% 
+  mutate(origin = case_when(data == "pop" ~ "ISIMIP", 
+                            data == "gdp" ~ "ISIMIP", 
+                            data == "effort" ~ "Rousseau_et_al_2023", 
+                            data == "Food" ~ "FAO", 
+                            data == "food_extr_2010" ~ "Extrapolated", 
+                            data == "food_extr_1961" ~ "Extrapolated", 
+                            data == "effort_extr_2010" ~ "Extrapolated",
+                            data == "effort_extr_1961" ~ "Extrapolated",
+                            data == "food_final" & year <=2010 ~ "FAO", 
+                            data == "food_final" & year >2010 ~ "Extrapolated",
+                            data == "effort_final" & year <=2010 ~ "Rousseau_et_al_2023", 
+                            data == "effort_final" & year >2010 ~ "Extrapolated"), 
+         year = as.numeric(year))
+  
+# fix scenarios for effort 
+df_plot$scenarios<-ifelse(df_plot$data == "effort_extr_1961" & df_plot$year <=2010, "Historical extrapolated", df_plot$scenarios)
+
+# we use food_final which considers the original data from 1961-2010 (food) and the projections from 2011 to 2100 (food_extr_2010) multiplied by population 
+
+plot_demand<-ggplot(df_plot, aes(x = year, y = value))+
+  geom_point(data = filter(df_plot, data %in% c("food_final"), origin == "FAO"), aes(color = scenarios), size = 1)+
+  geom_line(data = filter(df_plot, data %in% c("food_final"), origin == "Extrapolated"), aes(color = scenarios), size = 1)+
+  scale_y_continuous(labels = unit_format(unit = "M", scale = 1e-6))+
+  scale_color_manual(name = "Scenarios", values = c("black", "blue", "red"), labels = c("Historical data", "SSP1-mitigation", "SSP5-high-emission"), )+
+  my_theme +
+  ylab("Demand (kg/y)")+
+  xlab("Year")
+ 
+# we use effort_extr_1961 which considers projections between 1961 and 2100 
+# we use effort which considers observations between 1961 and 2010 
+
+plot_effort<-ggplot(filter(df_plot, data %in% c("effort", "effort_extr_1961")), aes(x = year, y = value))+
+  geom_point(data = filter(df_plot, data %in% c("effort")), aes(color = scenarios), size = 1)+
+  geom_line(data = filter(df_plot, data %in% c("effort_extr_1961")), aes(color = scenarios), size = 1)+
+  scale_y_continuous(labels = unit_format(unit = "M", scale = 1e-6))+
+  scale_color_manual(name = "Scenarios", values = c("black", "grey","blue", "red"), labels = c("Historical data", "Historical projections", "SSP1-mitigation", "SSP5-high-emission"), )+
+  my_theme +
+  ylab("Effort (DkW)")+
+  xlab("Year") 
+
+# remove legend from other plots 
+plot_demand<-plot_demand + theme(legend.position = "none")
+
+jpeg("projections_demand_effort.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+plot_demand/plot_effort + plot_layout(guides = "collect") + plot_annotation(tag_levels = 'A')
+dev.off()
+
+```
+
+## save data ---- 
+
+```{r}
+
+getwd()
+library(data.table)
+fwrite(x = df_plot, file.path(dir, "Demand_effort_ssp1_ssp5.csv"))
+
+```
+
+# other plots and analysis ----
+
+These are old and might not work as data format has changed
+
+## percentage changes
+
+```{r perc}
+
+# ref_year = 1960
+ref_year = 1990
+
+if(ref_year == 1960){
+
+  ref<-effort_au %>%
+    filter(Year >=1961, Year <=1970)
+
+}else{
+
+  ref<-effort_au %>%
+    filter(Year >=1990, Year <=1999)
+}
+
+ref1<-ref %>%
+  dplyr::summarise(ref = mean(effort))
+
+ref2<-mean(ref$effort) # same as above - just checking ...
+
+effort_au_perc<-effort_au %>%
+  mutate(perc = ((effort - ref2)/ref2)*100)
+
+# instantaneous rate of change
+effort_au_rate<-effort_au_perc %>%
+  arrange(Year) %>%
+  mutate(rate = (effort - lag(effort))/lag(effort)) # can also do *100
+
+head(effort_au_rate)
+
+# if 1960:
+# ref = 3762976
+# value in 1961 = 4289170; perc = 13.9
+# value in 2002 = 20712865; perc = 450
+
+# if 1990:
+# ref = 14720592
+# value in 1961 = 4289170; perc = -70.8627919
+# value in 2002 = 20712865; perc = 40.7067385
+
+# not making sense ...
+# percentage change between ref 1960 and 1961
+((4289170-3762976)/3762976)*100 # 14 increase...
+# percentage change between ref 1960 and 2002
+((20712865-3762976)/3762976)*100 # 450 increase...
+# percentage change between 1961 and 2002
+((20712865-4289170)/4289170)*100 # 383 increase... same scale - it makes sense
+
+# percentage change between ref 1990 and 1961
+((4289170-14720592)/14720592)*100 # -70 decrease ...
+# percentage change between ref 1990 and 2002
+((20712865-14720592)/14720592)*100 # 40 increase...
+
+if(ref_year == 1960){
+
+  ref_prod<-fao_au %>%
+    filter(Year >=1961, Year <=1970)
+
+}else{
+
+  ref_prod<-fao_au %>%
+    filter(Year >=1990, Year <=1999)
+}
+
+ref_prod1<-ref_prod %>%
+  summarise(ref = mean(Value))
+
+ref_prod2<-mean(ref_prod$Value) # same as above - just checking ...
+
+fao_au_perc<-fao_au %>%
+  mutate(perc = ((Value - ref_prod2)/ref_prod2)*100)
+
+# instantaneous rate of change
+fao_au_rate<-fao_au_perc %>%
+  arrange(Year) %>%
+  mutate(rate = (Value - lag(Value))/lag(Value))
+
+head(fao_au_rate)
+
+## plot raw values ----
+
+plot_effort<-ggplot(effort_au, aes(x=Year, y=effort)) +
+  geom_point(size = 1) +
+  geom_line()+
+  my_theme+
+  xlab("Year")+
+  ylab("Effort (Kw*Day)")+
+  # ggtitle("Trend in fishing effort for demersal fish in South-East Australia")
+  ggtitle("A")
+
+plot_effort
+
+plot_fao<-ggplot(fao_au, aes(x=Year, y=Value)) +
+  geom_point(size = 1) +
+  # geom_smooth()+
+  geom_line()+
+  my_theme+
+  xlab("Year")+
+  ylab("Food (1000 tonness)")+ # WRONG
+  # ggtitle("Trend in FAO `Food` for demersal fish in Australia")
+  ggtitle("B")
+
+plot_fao
+
+# jpeg("Effort_food.jpg", width = 5, height = 6, units = "in", res = 300, bg = "transparent")
+# plot_effort/plot_fao
+# dev.off()
+
+## plot percentage change ---
+
+fao_au_rate$Data<- "Food"
+effort_au_rate$Data<-"Effort"
+all_data<-fao_au_rate %>%
+  full_join(effort_au_rate)
+
+if(ref_year == 1960){
+  xmin = 1961
+  xmax = 1970
+  title = "Change in demersal fishing effort and demersal fish food relative to 1961-1970"
+}else{
+  xmin = 1990
+  xmax = 1999
+  title = "Change in demersal fishing effort and demersal fish food relative to 1990-1999"
+}
+
+plot_all<-ggplot(all_data, aes(x=Year, y=perc, color =Data, shape = Data)) +
+  geom_rect(aes(xmin=xmin, xmax=xmax, ymin=-Inf, ymax=Inf), fill = "grey90", alpha = 0.3, color = NA)+
+  geom_point(size = 1) +
+  geom_line()+
+  scale_color_manual(values = c("red", "blue"))+
+  scale_shape_manual(values = c(16,15))+
+  my_theme+
+  xlab("Year")+
+  ylab("Change (%)")+
+  ggtitle(title)
+
+if(ref_year == 1960){
+  name = "Effort_food_together1960.jpg"
+}else{
+  name = "Effort_food_together1990.jpg"
+}
+
+# jpeg(name, width = 6, height = 5, units = "in", res = 300, bg = "transparent")
+# plot_all
+# dev.off()
+
+## plot instantaneous rate of change ----
+
+plot_all_rate<-ggplot(all_data, aes(x=Year, y=rate, color =Data, shape = Data)) +
+  geom_point(size = 1) +
+  geom_line()+
+  scale_color_manual(values = c("red", "blue"))+
+  scale_shape_manual(values = c(16,15))+
+  my_theme+
+  xlab("Year")+
+  ylab("Rate of change")+
+  ggtitle("Instantaneous rate of change in demeral fishing effort and food in Australia")
+  ggtitle("C")
+
+name = "Effort_food_togetherRate.jpg"
+
+# jpeg(name, width = 6, height = 5, units = "in", res = 300, bg = "transparent")
+# (plot_effort+plot_fao)/plot_all_rate
+# dev.off()
+
+```
