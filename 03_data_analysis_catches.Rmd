@@ -1,0 +1,107 @@
+---
+title: "03_data_analysis_Catches"
+output: html_document
+date: "2023-01-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r load libraries and data}
+## load packages and themes  
+
+rm(list=ls())
+
+library(tidyverse)
+library(mgcv)
+library(scales)
+library(patchwork)
+
+summarise <-dplyr::summarise
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+
+
+dir = "/Users/raveendransankaran/Documents/prepare-Nilar14/"
+
+```
+
+
+```{r}
+
+catch_his <- read.csv(file = "calibration_catch_histsoc_1850_2004_regional_models.csv")
+# # subset SE au and the demersal group 
+
+
+catch_dem<-catch_his %>% 
+  filter(region == "SEAustralia.mizer", Sector == "industrial" , FGroup %in% c("flatfish<90cm", "demersal<30cm","demersal>=90cm", "flatfish>=90cm","demersal30-90cm"))
+
+#total catches 
+
+catch_tot_dem<- catch_dem
+catch_tot_dem$Totalcatches <- catch_tot_dem$Reported+catch_tot_dem$IUU+catch_tot_dem$Discards
+
+catch_tot_dem<- catch_tot_dem %>%
+   filter(Year >= 1961) %>% 
+  group_by(Year,FGroup) %>%
+  ungroup()
+
+head(catch_tot_dem)
+
+# # subset SE au and the pelagic group 
+
+catch_pel<-catch_his %>% 
+filter(region == "SEAustralia.mizer", Sector == "industrial", FGroup %in% c("pelagic30-90cm", "pelagic>=90cm", "pelagic<30cm"))
+
+# Total catches 
+
+catch_tot_pel<- catch_pel
+catch_tot_pel$Totalcatches <- catch_tot_pel$Reported+catch_tot_pel$IUU+catch_tot_pel$Discards
+
+catch_tot_pel<- catch_tot_pel %>%
+   filter(Year >= 1961) %>% 
+  group_by(Year,FGroup) %>%
+  ungroup()
+
+head(catch_tot_pel)
+
+
+
+ # do i use fao consumption data for calculating and projecting catches ?
+
+# loadind Fao data
+
+fao_dem<-fao %>% 
+  filter(Year <= 2004) %>% 
+  filter(Element %in% c("Food supply quantity (kg/capita/yr)"), Item %in% c("Demersal Fish")) %>% 
+  dplyr::select(Year, Item, Element, Value, Unit)
+
+
+```
+
+##relation between catches and demand 
+
+```{r}
+
+fao_dem<-fao_dem %>% 
+  mutate(Data = "Food") %>% 
+  select(Year, Value, Data)
+
+
+```
