@@ -310,7 +310,7 @@ params4@gear_params[3,7]<-params3@gear_params[3,7]*10^-5
 params4@gear_params[7,7]<-params3@gear_params[7,7]*10^-6
 params4@gear_params[9,7]<-params3@gear_params[7,7]*0.0001
 params4@gear_params[11,7]<-params3@gear_params[7,7]*0.1
-params4@gear_params[13,7]<-params3@gear_params[7,7]*10^-8
+params4@gear_params[13,7]<-params3@gear_params[7,7]*10^-8 # Collapsing 
 params4@gear_params[14,7]<-params3@gear_params[7,7]*0.001
 params4@gear_params[15,7]<-params3@gear_params[7,7]*0.1
 
