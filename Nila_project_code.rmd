@@ -46,7 +46,7 @@ my_theme<-theme_bw()+
 
 
 
-dir = "/Users/raveendransankaran/Documents/prepare-Nilar14/"
+setwd("/Users/raveendransankaran/Documents/prepare-Nilar14/")
 ```
 
 Loading param from Cami and formatting it to Mizer
@@ -306,11 +306,21 @@ Fishing_ssp1_scaled[,2]<-Fishing_ssp1_scaled[,2]*10^-6
 # 2 use catchability to scale down effort and get mortality value 
 params4<-params3
 params4@gear_params[2,7]<-params3@gear_params[2,7]*0.1
-params4@gear_params[3,7]<-params3@gear_params[3,7]*0.00001
+params4@gear_params[3,7]<-params3@gear_params[3,7]*10^-5
+params4@gear_params[7,7]<-params3@gear_params[7,7]*10^-6
+params4@gear_params[9,7]<-params3@gear_params[7,7]*0.0001
+params4@gear_params[11,7]<-params3@gear_params[7,7]*0.1
+params4@gear_params[13,7]<-params3@gear_params[7,7]*10^-8
+params4@gear_params[14,7]<-params3@gear_params[7,7]*0.001
+params4@gear_params[15,7]<-params3@gear_params[7,7]*0.1
 
+
+
+#only forcings to 2004
+effort2<- Fishing_ssp1_scaled[1:44,]
 # remember to consider only forcings to 2004 (the first 44 years of effort)
 #SSP1
-sim_ssp1_scaled<- project(params4, effort = Fishing_ssp1_scaled[1:44,])
+sim_ssp1_scaled<- project(params4, effort = effort2)
 # plot(sim_ssp1_scaled)
 plotBiomass(sim_ssp1_scaled)
 plotFMort(sim_ssp1_scaled)
@@ -323,14 +333,21 @@ plotYield(sim_ssp1_scaled)
 Using R_max to calibrate the model following - North Sea Model Example - mizerHowTo
 
 ```{r}
-params2<- params
-species_params(params2)$erepro <- .01
-sim_uncalibrated <- project(params2)
+
+params5<- params4
+species_params(params5)$erepro <- .01
+sim_uncalibrated <- project(params5, effort = effort2)
 plotCalibration(sim_uncalibrated, stage = 1)
-params_guessed <- params2
+params_guessed <- params5
 species_params(params_guessed)$R_max <- resource_params(params_guessed)$kappa *species_params(params_guessed)$w_inf^-1
-sim_guessed <- project(params_guessed)
+sim_guessed <- project(params_guessed, effort = effort2)
 plotCalibration(sim_guessed)
+plotBiomass(sim_guessed)
+
+jpeg("params_calibration.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+plotBiomass(sim_guessed)
+dev.off()
+
 
 ```
 
