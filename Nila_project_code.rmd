@@ -265,6 +265,19 @@ Fishing_ssp5<- matrix(NA, nrow = length(unique(ssp5$year)),
   
 Fishing_ssp5[,2]<- ssp5$effort_final         
 Fishing_ssp5[,1]<- ssp5_p$effort_final
+
+
+#Creating a matrix with constant fishing effort from 1961 to 2100 - keeping the effort at 1961 constant for all years 
+
+Fishing_constant_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
+                 ncol = length(unique(Gear_params$gear)),
+                 dimnames = list("time" = unique(ssp1$year), 
+                                 "effort" = unique(Gear_params$gear)))
+
+Fishing_constant_ssp1[,1]<- Fishing_ssp1[1,1]     
+Fishing_constant_ssp1[,2]<- Fishing_ssp1[1,2]  
+
+
 ```
 
 ##Forcing the above two effort scenarios on regional model - SouthEast Australia model
@@ -299,28 +312,37 @@ plotBiomass(sim_ssp5)
 # convert the unit of effort:
 # 1 divide by the volume of SEA region to get day at seaxkwxm3
 
-Fishing_ssp1_scaled <-Fishing_ssp1
+#Fishing_ssp1_scaled <-Fishing_ssp1
+Fishing_ssp1_scaled <- Fishing_constant_ssp1
 Fishing_ssp1_scaled[,1]<-Fishing_ssp1_scaled[,1]*10^-6
 Fishing_ssp1_scaled[,2]<-Fishing_ssp1_scaled[,2]*10^-6
 
 # 2 use catchability to scale down effort and get mortality value 
 params4<-params3
-params4@gear_params[2,7]<-params3@gear_params[2,7]*0.1
-params4@gear_params[3,7]<-params3@gear_params[3,7]*10^-5
-params4@gear_params[7,7]<-params3@gear_params[7,7]*10^-6
-params4@gear_params[9,7]<-params3@gear_params[7,7]*0.0001
-params4@gear_params[11,7]<-params3@gear_params[7,7]*0.1
-params4@gear_params[13,7]<-params3@gear_params[7,7]*10^-8 # Collapsing 
-params4@gear_params[14,7]<-params3@gear_params[7,7]*0.001
-params4@gear_params[15,7]<-params3@gear_params[7,7]*0.1
 
+#params4@gear_params[1,7]<-params3@gear_params[2,7]*10^-3
+#params4@gear_params[2,7]<-params3@gear_params[2,7]*0.1
+#params4@gear_params[3,7]<-params3@gear_params[3,7]*10^-5
+#params4@gear_params[7,7]<-params3@gear_params[7,7]*10^-5
+#params4@gear_params[9,7]<-params3@gear_params[7,7]*0.0001
+#params4@gear_params[11,7]<-params3@gear_params[7,7]*0.1
+#params4@gear_params[13,7]<-params3@gear_params[7,7]*10^-8 # Collapsing 
+#params4@gear_params[14,7]<-params3@gear_params[7,7]*0.001
+#params4@gear_params[15,7]<-params3@gear_params[7,7]*0.1
 
+params4@gear_params[,7]<-params3@gear_params[,7]*0.1
+#params4@gear_params[,17]<-params3@gear_params[,7]*0.01
+#params4@gear_params[7,7]<-params3@gear_params[7,7]*0
 
 #only forcings to 2004
-effort2<- Fishing_ssp1_scaled[1:44,]
+#effort2<- Fishing_ssp1_scaled[1:44,]
 # remember to consider only forcings to 2004 (the first 44 years of effort)
 #SSP1
-sim_ssp1_scaled<- project(params4, effort = effort2)
+#sim_ssp1_scaled1<- project(params4, effort = effort2)
+
+#Using constant effort 
+
+sim_ssp1_scaled<- project(params4, effort = Fishing_ssp1_scaled)
 # plot(sim_ssp1_scaled)
 plotBiomass(sim_ssp1_scaled)
 plotFMort(sim_ssp1_scaled)
@@ -336,15 +358,20 @@ Using R_max to calibrate the model following - North Sea Model Example - mizerHo
 
 params5<- params4
 species_params(params5)$erepro <- .01
-sim_uncalibrated <- project(params5, effort = effort2)
+sim_uncalibrated <- project(params5, effort = Fishing_ssp1_scaled)
 plotCalibration(sim_uncalibrated, stage = 1)
 params_guessed <- params5
+params5@gear_params[7,7]<-params3@gear_params[7,7]*10^-5
 species_params(params_guessed)$R_max <- resource_params(params_guessed)$kappa *species_params(params_guessed)$w_inf^-1
-sim_guessed <- project(params_guessed, effort = effort2)
+sim_guessed <- project(params_guessed, effort = Fishing_ssp1_scaled)
 plotCalibration(sim_guessed)
 plotBiomass(sim_guessed)
 
-jpeg("params_calibration.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+#jpeg("params_calibration.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+#plotBiomass(sim_guessed)
+#dev.off()
+
+jpeg("params_calibration2.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
 plotBiomass(sim_guessed)
 dev.off()
 
