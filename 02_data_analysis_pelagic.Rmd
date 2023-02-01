@@ -108,7 +108,7 @@ fao_au<-fao_au %>%
 
 effort_au<- effort_au %>% 
   mutate(Data = "Effort") %>% 
-  rename(Value = effort) %>%
+  dplyr::rename(Value=effort) %>%
   select(Year, Value, Data)
 
 all_data<-fao_au %>% 
@@ -311,8 +311,18 @@ ssp1_p<-proj_demand_effort(proj_ssp1) %>%
 ssp5_p<-proj_demand_effort(proj_ssp5)%>% 
   mutate(scenarios = ifelse(year <=2010, "Historical", "ssp5"))
 
-ssp_all_p<-ssp1 %>% 
-  full_join(ssp5)
+saveRDS(ssp1_p, "ssp1_p.rds")
+saveRDS(ssp5_p, "ssp5_p.rds")
+
+```
+
+
+
+```{r}
+
+ssp_all_p<-ssp1_p %>% 
+  full_join(ssp5_p)
+
 
 ```
 

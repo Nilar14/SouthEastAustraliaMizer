@@ -313,9 +313,17 @@ ssp1<-proj_demand_effort(proj_ssp1) %>%
 ssp5<-proj_demand_effort(proj_ssp5)%>% 
   mutate(scenarios = ifelse(year <=2010, "Historical", "ssp5"))
 
+saveRDS(ssp1,"~/Documents/SEAusMizer/SouthEastAustraliaMizer/ssp1_d.rds")
+saveRDS(ssp5,"~/Documents/SEAusMizer/SouthEastAustraliaMizer/ssp5_d.rds")
+
+```
+
+
+```{r}
+
 ssp_all<-ssp1 %>% 
   full_join(ssp5)
-saveRDS(ssp_all," ssp_all.rds")
+
 ```
 
 ## plot projections
