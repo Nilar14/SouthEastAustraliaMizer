@@ -87,10 +87,10 @@ head(catch_tot_pel)
 
 # loadind Fao data
 
-fao_dem<-fao %>% 
-  filter(Year <= 2004) %>% 
-  filter(Element %in% c("Food supply quantity (kg/capita/yr)"), Item %in% c("Demersal Fish")) %>% 
-  dplyr::select(Year, Item, Element, Value, Unit)
+#fao_dem<-fao %>% 
+ # filter(Year <= 2004) %>% 
+  #filter(Element %in% c("Food supply quantity (kg/capita/yr)"), Item %in% c("Demersal Fish")) %>% 
+  #dplyr::select(Year, Item, Element, Value, Unit)
 
 
 ```

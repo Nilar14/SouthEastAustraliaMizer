@@ -46,7 +46,7 @@ my_theme<-theme_bw()+
 
 
 
-setwd("/Users/raveendransankaran/Documents/prepare-Nilar14/")
+ setwd("/Users/raveendransankaran/Documents/prepare-Nilar14/")
 ```
 
 Loading param from Cami and formatting it to Mizer
@@ -116,24 +116,14 @@ params <- newMultispeciesParams(species_params = Species_params, gear_params = G
 
 ```{r}
 plotSpectra(params)
-Simparam <- project(params, effort = 1)
+Simparam <- project(params, effort = 0, t_max = 500)
 plotSpectra(Simparam)
 plotBiomass(Simparam)
 
 
 ```
 
-Code here shows that the biomass is decreasing drastically - need to change the R_max value
-```{r}
-
-params@species_params$R_max<- params@resource_params$kappa*params@species_params$w_inf^-1
-Simparam<-project(params, effort = 1)
-plotSpectra(Simparam)
-plotBiomass(Simparam)
-
-```
-
-All Species Co-exist : Except one species - Squalus spp.
+All species coexist
 
 ```{r}
 plotFeedingLevel(Simparam, include_critical = TRUE)
@@ -245,6 +235,15 @@ ggplot(data = catch_tt, aes(x = Year, y = Totalcatches,color = FGroup)) +
 ##Creating Effort matrix
 ```{r}
 
+setwd("~/Documents/SEAusMizer/SouthEastAustraliaMizer/")
+
+ssp1 <- readRDS("ssp1_d.rds")
+ssp5<- readRDS("ssp5_d.rds")
+ssp1_p <- readRDS("ssp1_p.rds")
+ssp5_p<- readRDS("ssp5_p.rds")
+
+
+
 #Using effort calculated using demand from script developed by Camilla Novaglio 
 #ssp1 
 Fishing_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
@@ -286,12 +285,25 @@ Fishing_constant_ssp1[,2]<- Fishing_ssp1[1,2]
 
 params2<- newMultispeciesParams( species_params = Species_params, gear_params = Gear_params, kappa = 0.002191539)
 
-sim<- project(params2,t_max=200)
+sim<- project(params2,t_max=500)
 plotBiomass(sim)
+```
+
+Still not reaching coexistence, editing squalus rmax
+
+
+```{r}
+
+species_params(params2)$R_max <- resource_params(params2)$kappa * species_params(params2)$w_inf^-1
+sim<- project(params2,t_max=500)
+plotBiomass(sim)
+
 
 params3<- params2
 
-params3@initial_n <- sim@n[200,,]
+params3@initial_n <- sim@n[500,,]
+
+# taking the last time step 
 
 sim2<- project(params3)
 plotBiomass(sim2)
@@ -361,7 +373,6 @@ species_params(params5)$erepro <- .01
 sim_uncalibrated <- project(params5, effort = Fishing_ssp1_scaled)
 plotCalibration(sim_uncalibrated, stage = 1)
 params_guessed <- params5
-params5@gear_params[7,7]<-params3@gear_params[7,7]*10^-5
 species_params(params_guessed)$R_max <- resource_params(params_guessed)$kappa *species_params(params_guessed)$w_inf^-1
 sim_guessed <- project(params_guessed, effort = Fishing_ssp1_scaled)
 plotCalibration(sim_guessed)
@@ -380,7 +391,7 @@ dev.off()
 
 Further refining the model 
 ```{r}
-params_optim <- params
+params_optim <- params5
 vary <-  log10(params_optim@species_params$R_max) 
 getError(vary = vary, params = params_optim, dat = params_optim@species_params$biomass_observed)
 params_optim<-setParams(params_optim)
@@ -400,7 +411,7 @@ optim_result <- optimParallel::optimParallel(par=vary,getError, params=params_op
 stopCluster(cl)
 
 params_optim@species_params$R_max <- 10^optim_result$par 
-sim_optim <- project(params_optim)
+sim_optim <- project(params_optim, effort = Fishing_ssp1_scaled)
 
 plotSpectra(sim_optim)
 
@@ -412,7 +423,7 @@ Functions from Romain's Toothfish model
 fastOptim <- function(params)
 {
 # create set of params for the optimisation process
-params_optim <- params
+params_optim <- params5
 vary <-  log10(params_optim@species_params$R_max) # variable to explore
 params_optim<-setParams(params_optim)
 # set up workers

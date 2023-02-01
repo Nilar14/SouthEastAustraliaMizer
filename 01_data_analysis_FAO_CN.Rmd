@@ -107,9 +107,11 @@ fao_au<-fao_au %>%
   select(Year, Value, Data)
 
 effort_au<- effort_au %>% 
-  mutate(Data = "Effort") %>% 
-  rename(Value = effort) %>%
-  select(Year, Value, Data)
+  mutate(Data = "Effort") 
+#  rename(Value = effort) %>%
+  colnames(effort_au)<-c("Year", "Value", "Data")
+
+effort_au<-effort_au %>%   select(Year, Value, Data)
 
 all_data<-fao_au %>% 
   full_join(effort_au) %>% 
@@ -313,7 +315,7 @@ ssp5<-proj_demand_effort(proj_ssp5)%>%
 
 ssp_all<-ssp1 %>% 
   full_join(ssp5)
-
+saveRDS(ssp_all," ssp_all.rds")
 ```
 
 ## plot projections
