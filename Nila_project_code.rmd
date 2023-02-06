@@ -51,7 +51,7 @@ my_theme<-theme_bw()+
 
 Loading param from Cami and formatting it to Mizer
 ```{r}
-DFparam <- read_excel("mixed fihseries data/DFparam.xlsx")
+DFparam <- read_excel("DFparam.xlsx")
 
 Species_params <- DFparam[,(-c(1,10,15,16,17,18,19,20,21,25,26,27,28,29,30,32,34,35,36,37))]
 Species_params$R_max <- Species_params$r_max
@@ -235,51 +235,54 @@ ggplot(data = catch_tt, aes(x = Year, y = Totalcatches,color = FGroup)) +
 ##Creating Effort matrix
 ```{r}
 
-setwd("~/Documents/SEAusMizer/SouthEastAustraliaMizer/")
 
-ssp1 <- readRDS("ssp1_d.rds")
-ssp5<- readRDS("ssp5_d.rds")
-ssp1_p <- readRDS("ssp1_p.rds")
-ssp5_p<- readRDS("ssp5_p.rds")
+#ssp1 <- readRDS("ssp1_d.rds")
+#ssp5<- readRDS("ssp5_d.rds")
+#ssp1_p <- readRDS("ssp1_p.rds")
+#ssp5_p<- readRDS("ssp5_p.rds")
 
 
 
 #Using effort calculated using demand from script developed by Camilla Novaglio 
 #ssp1 
-Fishing_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
-                 ncol = length(unique(Gear_params$gear)),
-                 dimnames = list("time" = unique(ssp1$year), 
-                                 "effort" = unique(Gear_params$gear)))
+#Fishing_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
+                # ncol = length(unique(Gear_params$gear)),
+                 #dimnames = list("time" = unique(ssp1$year), 
+                                 #"effort" = unique(Gear_params$gear)))
 
   
-Fishing_ssp1[,2]<- ssp1$effort_final         
-Fishing_ssp1[,1]<- ssp1_p$effort_final
+#Fishing_ssp1[,2]<- ssp1$effort_final         
+#Fishing_ssp1[,1]<- ssp1_p$effort_final
 
 #ssp5
 
-Fishing_ssp5<- matrix(NA, nrow = length(unique(ssp5$year)), 
-                 ncol = length(unique(Gear_params$gear)),
-                 dimnames = list("time" = unique(ssp5$year), 
-                                 "effort" = unique(Gear_params$gear)))
+#Fishing_ssp5<- matrix(NA, nrow = length(unique(ssp5$year)), 
+                # ncol = length(unique(Gear_params$gear)),
+                 #dimnames = list("time" = unique(ssp5$year), 
+                                 #"effort" = unique(Gear_params$gear)))
   
-Fishing_ssp5[,2]<- ssp5$effort_final         
-Fishing_ssp5[,1]<- ssp5_p$effort_final
+#Fishing_ssp5[,2]<- ssp5$effort_final         
+#Fishing_ssp5[,1]<- ssp5_p$effort_final
 
 
 #Creating a matrix with constant fishing effort from 1961 to 2100 - keeping the effort at 1961 constant for all years 
 
-Fishing_constant_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
-                 ncol = length(unique(Gear_params$gear)),
-                 dimnames = list("time" = unique(ssp1$year), 
-                                 "effort" = unique(Gear_params$gear)))
+#Fishing_constant_ssp1<- matrix(NA, nrow = length(unique(ssp1$year)), 
+                # ncol = length(unique(Gear_params$gear)),
+                # dimnames = list("time" = unique(ssp1$year), 
+                                # "effort" = unique(Gear_params$gear)))
 
-Fishing_constant_ssp1[,1]<- Fishing_ssp1[1,1]     
-Fishing_constant_ssp1[,2]<- Fishing_ssp1[1,2]  
+#Fishing_constant_ssp1[,1]<- Fishing_ssp1[1,1]     
+#Fishing_constant_ssp1[,2]<- Fishing_ssp1[1,2]  
+
+#Using Historic Fishing effort to drive the model 
+
+Fishing_his <- readRDS("Fishing_his.rds")
 
 
 ```
 
-##Forcing the above two effort scenarios on regional model - SouthEast Australia model
+##Forcing the above historical fishing effort on regional model - SouthEast Australia model
 
 ```{r}
 
@@ -287,17 +290,6 @@ params2<- newMultispeciesParams( species_params = Species_params, gear_params = 
 
 sim<- project(params2,t_max=500)
 plotBiomass(sim)
-```
-
-Still not reaching coexistence, editing squalus rmax
-
-
-```{r}
-
-species_params(params2)$R_max <- resource_params(params2)$kappa * species_params(params2)$w_inf^-1
-sim<- project(params2,t_max=500)
-plotBiomass(sim)
-
 
 params3<- params2
 
@@ -308,29 +300,60 @@ params3@initial_n <- sim@n[500,,]
 sim2<- project(params3)
 plotBiomass(sim2)
 
+#Fishing_his
+
+sim3 <- project(params3, effort = Fishing_his)
+plotBiomass(sim3)
+
+jpeg("Historic_fishing.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+plotBiomass(sim3)
+dev.off()
+
+# Modeled catches 
+
+Model_catches <- getYield(sim3)
+
+```
+
+
+
+```{r}
+# Use if Co-existence not achieved 
+#species_params(params2)$R_max <- resource_params(params2)$kappa * species_params(params2)$w_inf^-1
+#sim<- project(params2,t_max=500)
+#plotBiomass(sim)
+
+```
+
+
+
+## SSP1 and SSP5- Fishing Effort (Projections)
+
+```{r Scenarios}
+
 #SSP1
-sim_ssp1<- project(params3, effort = Fishing_ssp1)
-plot(sim_ssp1)
-plotSpectra(sim_ssp1)
-plotBiomass(sim_ssp1)
+#sim_ssp1<- project(params3, effort = Fishing_ssp1)
+#plot(sim_ssp1)
+#plotSpectra(sim_ssp1)
+#plotBiomass(sim_ssp1)
 
 #SSP5
-sim_ssp5 <- project(params3, effort = Fishing_ssp5)
-plot(sim_ssp5)
-plotSpectra(sim_ssp5)
-plotBiomass(sim_ssp5)
+#sim_ssp5 <- project(params3, effort = Fishing_ssp5)
+#plot(sim_ssp5)
+#plotSpectra(sim_ssp5)
+#plotBiomass(sim_ssp5)
 
 
 # convert the unit of effort:
 # 1 divide by the volume of SEA region to get day at seaxkwxm3
 
 #Fishing_ssp1_scaled <-Fishing_ssp1
-Fishing_ssp1_scaled <- Fishing_constant_ssp1
-Fishing_ssp1_scaled[,1]<-Fishing_ssp1_scaled[,1]*10^-6
-Fishing_ssp1_scaled[,2]<-Fishing_ssp1_scaled[,2]*10^-6
+#Fishing_ssp1_scaled <- Fishing_constant_ssp1
+#Fishing_ssp1_scaled[,1]<-Fishing_ssp1_scaled[,1]*10^-6
+#Fishing_ssp1_scaled[,2]<-Fishing_ssp1_scaled[,2]*10^-6
 
 # 2 use catchability to scale down effort and get mortality value 
-params4<-params3
+#params4<-params3
 
 #params4@gear_params[1,7]<-params3@gear_params[2,7]*10^-3
 #params4@gear_params[2,7]<-params3@gear_params[2,7]*0.1
@@ -342,7 +365,7 @@ params4<-params3
 #params4@gear_params[14,7]<-params3@gear_params[7,7]*0.001
 #params4@gear_params[15,7]<-params3@gear_params[7,7]*0.1
 
-params4@gear_params[,7]<-params3@gear_params[,7]*0.1
+#params4@gear_params[,7]<-params3@gear_params[,7]*0.1
 #params4@gear_params[,17]<-params3@gear_params[,7]*0.01
 #params4@gear_params[7,7]<-params3@gear_params[7,7]*0
 
@@ -354,11 +377,11 @@ params4@gear_params[,7]<-params3@gear_params[,7]*0.1
 
 #Using constant effort 
 
-sim_ssp1_scaled<- project(params4, effort = Fishing_ssp1_scaled)
+#sim_ssp1_scaled<- project(params4, effort = Fishing_ssp1_scaled)
 # plot(sim_ssp1_scaled)
-plotBiomass(sim_ssp1_scaled)
-plotFMort(sim_ssp1_scaled)
-plotYield(sim_ssp1_scaled)
+#plotBiomass(sim_ssp1_scaled)
+#plotFMort(sim_ssp1_scaled)
+#plotYield(sim_ssp1_scaled)
 
 # 3 once you have coexistence, compare modelled catches to empirical catches using the function getErrorCustom() in MizerHow - ASK ROMAIN at this point.  
 ```
@@ -370,11 +393,12 @@ Using R_max to calibrate the model following - North Sea Model Example - mizerHo
 
 params5<- params4
 species_params(params5)$erepro <- .01
-sim_uncalibrated <- project(params5, effort = Fishing_ssp1_scaled)
+sim_uncalibrated <- project(params5, effort = Fishing_his)
 plotCalibration(sim_uncalibrated, stage = 1)
+params5@gear_params[7,7] <- 0.001
 params_guessed <- params5
 species_params(params_guessed)$R_max <- resource_params(params_guessed)$kappa *species_params(params_guessed)$w_inf^-1
-sim_guessed <- project(params_guessed, effort = Fishing_ssp1_scaled)
+sim_guessed <- project(params_guessed, effort = Fishing_his)
 plotCalibration(sim_guessed)
 plotBiomass(sim_guessed)
 
