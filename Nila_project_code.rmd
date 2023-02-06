@@ -305,14 +305,22 @@ plotBiomass(sim2)
 sim3 <- project(params3, effort = Fishing_his)
 plotBiomass(sim3)
 
-jpeg("Historic_fishing.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
-plotBiomass(sim3)
-dev.off()
+#jpeg("Historic_fishing.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+#plotBiomass(sim3)
+#dev.off()
 
 # Modeled catches 
 
 Model_catches <- getYield(sim3)
+plotYield(sim3)
 
+#jpeg("Modelled_Catches.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
+#plotYield(sim3)
+#dev.off()
+
+# Convering it to tonnes 
+
+Model_catches <- Model_catches/1000000
 ```
 
 
