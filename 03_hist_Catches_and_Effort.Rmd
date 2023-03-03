@@ -1,0 +1,189 @@
+---
+title: "03_hist_Catches_and_Effort"
+output: html_document
+date: "2023-01-17"
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = FALSE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r load libraries and data}
+## load packages and themes  
+
+rm(list=ls())
+
+library(tidyverse)
+library(mgcv)
+library(scales)
+library(patchwork)
+library(readxl)
+
+summarise <-dplyr::summarise
+rename <- dplyr::rename
+
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+
+
+dir = "/Documents/SEAusMizer/SouthEastAustraliaMizer/"
+
+```
+
+
+```{r include=FALSE}
+
+## Filtering Emperical catch data 
+
+catch_his <- read.csv(file = "calibration_catch_histsoc_1850_2004_regional_models.csv")
+# # subset SE au and the demersal group 
+
+#checking for fishing groups in the data 
+unique(catch_his$FGroup)
+
+catch_all<-catch_his %>% 
+  filter(region == "SEAustralia.mizer", Sector == "industrial" , FGroup %in% c("demersal30-90cm", "bathydemersal30-90cm", "benthopelagic30-90cm",  "flatfish<90cm",  "bathypelagic30-90cm", "benthopelagic>=90cm","bathydemersal>=90cm", "shark>=90cm","cephalopods" ))
+
+
+
+#total catches 
+
+catch_tot<- catch_all
+catch_tot$Totalcatches <-catch_tot$Reported+catch_tot$IUU+catch_tot$Discards
+
+#catch_tot<- catch_tot %>%
+   #filter(Year >= 1950) %>% 
+  #group_by(Year,FGroup) %>%
+  #ungroup()
+
+catch_tot <-catch_tot %>%
+  filter(Year >= 1950) %>% 
+  group_by(Year,FGroup) %>%
+  summarise(catch=sum(Totalcatches)) %>%
+ ungroup()
+
+#check catch data
+filter(catch_tot,Year==2001)
+a <-filter(catch_all,Year==2001)
+unique(a$FGroup)
+
+#PLot
+ggplot(data = catch_tot, aes(x = Year, y = catch,color = FGroup)) +
+  geom_line( size = 1) +
+  labs(title = "FGroup") 
+
+saveRDS(catch_tot, "catch_data.rds")                                    
+
+
+
+
+#head(catch_tot_dem) # starts at 1920
+
+# # subset SE au and the pelagic group 
+
+#catch_pel<-catch_his %>% 
+#filter(region == "SEAustralia.mizer", Sector == "industrial", FGroup %in% c("pelagic30-90cm", "pelagic>=90cm", "pelagic<30cm"))
+
+# Total catches 
+
+#catch_tot_pel<- catch_pel
+#catch_tot_pel$Totalcatches <- catch_tot_pel$Reported+catch_tot_pel$IUU+catch_tot_pel$Discards
+
+#catch_tot_pel<- catch_tot_pel %>%
+   #filter(Year >= 1950) %>% 
+  #group_by(Year,FGroup) %>%
+  #ungroup()
+
+#head(catch_tot_pel) # starts at 1950 
+
+#catch_pel <- catch_tot_pel %>%
+ # group_by(Year) %>%
+  #summarise(catch=sum(Totalcatches)) %>%
+ #ungroup()
+
+
+#Creating Emerical catch matrix from 1950 -2004 for demersal and pelagic functional groups
+
+#Catch_emp<- matrix(NA, nrow = length(unique(catch_tot_pel$Year)), 
+                # ncol = length(unique(Gear_params$gear)),
+                 #dimnames = list("time" = unique(catch_tot_pel$Year), 
+                                 #"catch" = unique(Gear_params$gear)))
+
+#Catch_emp[1,2]<- catch_tot_dem$Totalcatches[sum(1:9)]
+
+#Catch_emp[,1]<- catch_tot_pel$Totalcatches
+
+# Volume of the ecosystem from cami's model 
+areaEco<- 5.121076e+14
+ 
+
+```
+
+## Historic Effort data - demersal and pelagic 
+
+```{r data filtering}
+effort <- read.csv(file = "effort_histsoc_1841_2010_regional_models.csv")
+
+# demersal group 
+effort_dem<-effort %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("demersal30-90cm", "bathydemersal30-90cm", "benthopelagic30-90cm", "shark>=90cm", "flatfish<90cm",  "bathypelagic30-90cm", "benthopelagic>=90cm", "bathydemersal>=90cm")) %>% 
+  filter(Year <= 2004) %>% # used 2004 before 
+  group_by(Year) %>% 
+  summarise(effort = sum(NomActive)) %>% 
+  ungroup()
+
+# Taking the maximum value and dividing the effort 
+effort_dem$effort <- effort_dem$effort/max(effort_dem)
+
+# Doing the same for pelagic group 
+
+effort_pel<-effort %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("bathypelagic<30cm ", "cephalopods", "benthopelagic30-90cm")) %>% 
+  filter(Year <= 2004) %>% 
+  group_by(Year) %>% 
+  summarise(effort = sum(NomActive)) %>% 
+  ungroup()
+
+
+
+# Taking the maximum value and dividing the effort 
+effort_pel$effort <- effort_pel$effort/max(effort_pel)
+
+
+```
+
+
+## Creating Historic Fishing Matrix to force South East Australian Mizer model 
+
+```{r}
+
+
+Fishing_his<- matrix(NA, nrow = length(unique(effort_dem$Year)), 
+                 ncol = length(unique(Gear_params$gear)),
+                 dimnames = list("time" = unique(effort_dem$Year), 
+                                 "effort" = unique(Gear_params$gear)))
+
+Fishing_his[,2]<- effort_dem$effort         
+Fishing_his[,1]<- effort_pel$effort
+
+saveRDS(Fishing_his, "Fishing_his.rds")
+
+
+```

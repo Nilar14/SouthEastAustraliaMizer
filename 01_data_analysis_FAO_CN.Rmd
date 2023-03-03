@@ -80,7 +80,7 @@ fao<-read.csv(file = paste0(dir, "FAOSTAT_data_en_10-27-2022.csv"))
 # # subset SE au and the demersal group 
 
 effort_au<-effort %>% 
-  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("flatfish<90cm", "demersal<30cm","demersal>=90cm", "flatfish>=90cm","demersal30-90cm")) %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("demersal30-90cm", "bathydemersal30-90cm", "benthopelagic30-90cm", "shark>=90cm", "flatfish<90cm",  "bathypelagic30-90cm", "benthopelagic>=90cm", "bathydemersal>=90cm")) %>% 
   filter(Year >= 1961) %>% 
   group_by(Year) %>% 
   summarise(effort = sum(NomActive)) %>% 

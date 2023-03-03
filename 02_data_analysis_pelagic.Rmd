@@ -79,10 +79,10 @@ dir = "/Users/raveendransankaran/Documents/prepare-Nilar14/"
 effort <- read.csv(file = paste0(dir,"effort_histsoc_1841_2010_regional_models.csv"))
 fao<-read.csv(file = paste0(dir, "FAOSTAT_data_en_10-27-2022.csv"))
 
-# # subset SE au and the demersal group 
+# # subset SE au and the pelagic group 
 
-effort_au<-effort %>% 
-  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("pelagic30-90cm", "pelagic>=90cm", "pelagic<30cm"    )) %>% 
+effort_pel<-effort %>% 
+  filter(region == "SEAustralia.mizer", Sector == "Industrial", FGroup %in% c("bathypelagic<30cm ", "cephalopods", "benthopelagic30-90cm")) %>% 
   filter(Year >= 1961) %>% 
   group_by(Year) %>% 
   summarise(effort = sum(NomActive)) %>% 

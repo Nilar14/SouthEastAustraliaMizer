@@ -46,7 +46,7 @@ my_theme<-theme_bw()+
 
 
 
- setwd("/Users/raveendransankaran/Documents/prepare-Nilar14/")
+ #setwd("/Users/raveendransankaran/Documents/prepare-Nilar14/")
 ```
 
 Loading param from Cami and formatting it to Mizer
@@ -66,7 +66,12 @@ Species_params$ssbObs <- NULL
 
 Species_params$l_inf <- exp(log(Species_params$w_inf/Species_params$a)/Species_params$b)
 
-Species_params$FGroup<- c("bathypelagic<30cm", "demersal30-90cm", "demersal30-90cm","bathydemersal30-90cm", "benthopelagic30-90cm", "benthopelagic30-90cm", "shark>=90cm","demersal30-90cm","flatfish<90cm", "benthopelagic30-90cm", "benthopelagic30-90cm", "bathypelagic30-90cm", "benthopelagic30-90cm", "benthopelagic>=90cm", "benthopelagic>=90cm", "bathydemersal>=90cm", "shark>=90cm", "shark>=90cm", "shark>=90cm" )
+#Species_params$FGroup<- c("bathypelagic<30cm", "demersal30-90cm", "demersal30-90cm","bathydemersal30-90cm", "benthopelagic30-90cm", "benthopelagic30-90cm", "shark>=90cm","demersal30-90cm","flatfish<90cm", "benthopelagic30-90cm", "benthopelagic30-90cm", "bathypelagic30-90cm", "benthopelagic30-90cm", "benthopelagic>=90cm", "benthopelagic>=90cm", "bathydemersal>=90cm", "shark>=90cm", "shark>=90cm", "shark>=90cm" )
+
+# Loading all the fishing groups and gears 
+
+Fishing_g<- read_csv("Group_CN.csv")
+Fishing_g <- Fishing_g[-c(20,21,22,23),]
 
 # Fishing params 
 Gear_params <- DFparam[,c(2,17,18,19,20,21,28)]
@@ -85,18 +90,16 @@ gillnet<-function(w,W50_B,sigma_B,...){
   return(sel)
 }
 
-# not working for now ....
-unique(Gear_params$species)
-demersal <-c("centroberyx affinis",  "nemadactylus macropterus","platycephalus richardsoni", "zeus faber" , "seriolella brama","hoplostethus atlanticus", "macruronus novaezelandiae", "seriolella punctata", "rexea solandri","genypterus blacodes")
-pelagic <- c("myctophids","sillago flindersi","nototodarus gouldi","helicolenus barathri","trachurus declivis","squalus spp.", "pristiophorus cirratus","mustelus antarcticus", "galeorhinus galeus" )
-
-str(Gear_params)
-Gear_params$gear=ifelse(Gear_params$species %in% demersal, "demersal", "pelagic")
-# end not working 
- 
-Gear_params$gear<-"pelagic"
-Gear_params[c(6,8:16),'gear']<-"demersal"
 head(Gear_params)
+
+Gear_params$FGroup<- Fishing_g$FGroup
+Gear_params$gear<- Fishing_g$gear
+Gear_params$Gear<-Fishing_g$Gear
+Gear_params$FAO_demand<-Fishing_g$FAO_demand
+
+
+
+
 ```
 
 
@@ -305,24 +308,372 @@ plotBiomass(sim2)
 sim3 <- project(params3, effort = Fishing_his)
 plotBiomass(sim3)
 
+saveRDS(sim3, "sim3.rds")
+
 #jpeg("Historic_fishing.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
 #plotBiomass(sim3)
 #dev.off()
+```
+
+
+```{r}
+
+# Loading sim3 
+
+sim3 <- readRDS("sim3.rds")
+
 
 # Modeled catches 
 
 Model_catches <- getYield(sim3)
 plotYield(sim3)
+#write.csv(Model_catches, file = "model_catches.csv")
+mod_catches <- read_csv("model_catches.csv")
 
-#jpeg("Modelled_Catches.jpg", width = 6, height = 4.5, units = "in", res = 300, bg = "transparent")
-#plotYield(sim3)
+mod_catches<- mod_catches %>% 
+  filter(Year >= 1995)
+
+
+
+# Modelled biiomass
+#Model_bio <- getBiomass(sim3)
+#mod_bio<- read_csv("model_bio.csv")
+#Model_catches2 <- t(Model_catches2)
+#write.csv(Model_catches2, file = "model_catch.csv")
+#model_catches1 <- read_excel("Model_catch.xls")
+#model_catches<- model_catches1[,-3:-111] #- from 1950
+
+# create an empty array 
+
+# Sp 3- invertebrate - use a fgroup that fits it better  
+
+
+
+#Loading emperical catch data - 1995 to 2017 from Cami's code 
+
+yieldObs_timeVariant <- read_csv("CN_catch.csv")
+yieldObs_timeVariant <- yieldObs_timeVariant%>% 
+  filter(Year <= 2010)
+
+
+
+# catch data for myctophids was NA in Cami's code - therefore, i am using the calibrated catch data for the group 'bathypelagic<30cm' from 1995-2004 and averaging the values to use in the model.
+
+#catch_his <- read.csv(file = "calibration_catch_histsoc_1850_2004_regional_models.csv")
+
+#catch_sub<-catch_his %>% 
+  #filter(region == "SEAustralia.mizer" , Sector == "industrial" , FGroup == "pelagic<30cm")
+
+
+#total catches 
+
+#catch_tot_myc<- catch_sub
+#catch_tot_myc$Totalcatches <-catch_tot_myc$Reported+catch_tot_myc$IUU+catch_tot_myc$Discards
+
+
+#catch_tot_myc <-catch_tot_myc %>%
+  #filter(Year >= 1995) %>% 
+  #ungroup()
+
+
+
+#catch_myc <-  mean(catch_tot_myc$Totalcatches)  
+
+
+# convert 
+
+#catch_myc <-(catch_myc/areaEco)* 1000000
+
+
+# Comparing trends 
+
+
+
+
+
+
+#emp_catches <- readRDS("catch_data.rds")
+
+
+# Volume of the ecosystem from cami's model 
+#areaEco<- 5.121076e+14
+
+# converting the emperical catches in tonnes / year to g/m3/year
+
+#emp_catches$catch <-(emp_catches$catch/areaEco)* 1000000
+
+#yieldObs_timeVariant$myctophids<- 8.407673e-07
+
+
+names <- colnames(mod_catches)
+colnames(yieldObs_timeVariant)<- names 
+
+saveRDS(yieldObs_timeVariant,"yieldObs_timeVariant.rds")
+
+
+# plotting emperical catches vs modelled catches 
+
+catch <- reshape2::melt(mod_catches,"Year")
+catch$type<- "model"
+
+catch2 <- reshape2::melt(yieldObs_timeVariant,"Year")
+catch2$type<- "empirical"
+
+plot_catch <- rbind(catch, catch2)
+plot_catch$variable<- as.character(plot_catch$variable)
+
+#saveRDS(plot_catch, "plot_catch.rds")
+
+colnames(plot_catch) <- c("Time", "Spp", "Catch", "Type")
+
+fig <- ggplot(data = plot_catch, aes(x = Time, y = Catch, color = Spp, linetype= Type)) +
+  geom_line( size = 1) +
+  scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = time_break)+
+  theme(legend.position = "bottom")+
+  labs(title = "Modelled Vs Emperical Catches") 
+
+
+# plotting for all species 
+
+time_break <- seq(unique(plot_catch$Time)[1],
+                  unique(plot_catch$Time)[length(unique(plot_catch$Time))],
+                  by=2)
+
+time_break2 <- seq(unique(plot_catch$Time)[1],
+                  unique(plot_catch$Time)[length(unique(plot_catch$Time))],
+                  by=3)
+
+
+fig2 <- ggplot(data = plot_catch, aes(x = Time, y = Catch, linetype= Type)) +
+  geom_line( size = 1) +
+ #scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = time_break2)+
+  theme(legend.position = "bottom")+
+  facet_wrap(~Spp,scales = "free")+
+  scale_linetype_manual(values = c("empirical" = "dotted", "model" = "solid"))
+  labs(title = "Modelled Vs Emperical Catches") 
+
+
+# biomass 
+
+biomass_mod <- reshape2::melt(mod_bio,"Year")
+biomass_mod$type<- "model"
+
+fig3 <- ggplot(data = biomass_mod, aes(x = Year, y = value)) +
+  geom_line( size = 1) +
+  #scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = unique(biomass_mod$Year))+
+  theme(legend.position = "bottom")+
+  facet_wrap(~variable, scales = "free")+
+  labs(title = "Modelled Biomass") 
+
+
+
+
+#jpeg("modvsemp.jpg", width = 11.5, height = 6, units = "in", res = 300, bg = "transparent")
+#fig
 #dev.off()
 
-# Convering it to tonnes 
-
-Model_catches <- Model_catches/1000000
 ```
 
+#Calibrating the model - getError
+
+```{r}
+
+# use optimize for valibrating catchability 
+
+vary_df <- data.frame("name" = "catchability", "length" = 19, "lower" = 1e-5, "upper" = 1, "slot" = "gear_params" , "unit" = "linear")
+
+vary <- sim3@params@gear_params$catchability
+
+
+
+getErrorCustom2(vary_df = vary_df, vary = vary, params = sim3@params, data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant) # call it geterrorcustom 2 , include the selectivity function 
+
+
+getErrorCustom2 <- function (vary, vary_df, params, data_type = "biomass_observed", 
+    effort = 0, time_series = NULL, tol = 0.001, timetorun = 10) 
+{ trawl <- function(w,W25_S,W50_S,...){
+
+  SR <- W50_S - W25_S
+  S1 <- W50_S*log(3)/SR
+  S2 <- S1 / W50_S
+  sel <-1 / (1 + exp(S1 - S2*w))
+  return(sel)
+}
+
+gillnet<-function(w,W50_B,sigma_B,...){
+  sel<-exp(-(w-W50_B)^2/sigma_B^2)
+  return(sel)
+}
+    start = 1
+    for (iTrait in 1:nrow(vary_df)) {
+        end = start + vary_df$length[iTrait] - 1
+        switch(vary_df$slot[iTrait], species_params = {
+            if (vary_df$unit[iTrait] == "log10") {
+                params@species_params[vary_df$name[iTrait]][1:vary_df$length[iTrait], 
+                  ] <- 10^vary[start:end]
+            } else {
+                params@species_params[vary_df$name[iTrait]][1:vary_df$length[iTrait], 
+                  ] <- vary[start:end]
+            }
+        }, gear_params = {
+            if (vary_df$unit[iTrait] == "log10") {
+                params@gear_params[vary_df$name[iTrait]][1:vary_df$length[iTrait], 
+                  ] <- 10^vary[start:end]
+            } else {
+                params@gear_params[vary_df$name[iTrait]][1:vary_df$length[iTrait], 
+                  ] <- vary[start:end]
+            }
+        }, {
+            stop("unknown parameter to vary")
+        })
+        start = start + vary_df$length[iTrait]
+    }
+    params <- setParams(params)
+    params_steady <- projectToSteady(params, distance_func = distanceSSLogN, 
+        tol = tol, t_max = 200, return_sim = F)
+    sim_error <- project(params_steady, t_max = timetorun, progress_bar = F, 
+        effort = effort)
+    cutoffLow <- params@species_params$biomass_cutoffLow
+    if (is.null(cutoffLow)) 
+        cutoffLow <- rep(0, length(params@species_params$species))
+    cutoffLow[is.na(cutoffLow)] <- 0
+    cutoffHigh <- params@species_params$biomass_cutoffHigh
+    if (is.null(cutoffHigh)) 
+        cutoffHigh <- params@species_params$w_inf * 10
+    cutoffHigh[is.na(cutoffHigh)] <- params@w[length(params@w)]
+    if (!is.null(time_series)) {
+        if (data_type == "biomass_observed") {
+            output = time_series
+            output[] <- NA
+            for (iSpecies in 1:dim(output)[2]) {
+                for (iTime in 1:dim(output)[1]) output[iTime, 
+                  iSpecies] = sum((sim_error@n[iTime, iSpecies, 
+                  ] * params@w * params@dw)[params@w >= cutoffLow[iSpecies] & 
+                  cutoffHigh[iSpecies] >= params@w])
+            }
+        }
+        else if (data_type == "yield_observed") {
+            output <- getYield(sim_error)
+        }
+        else stop("unknown data type")
+        output[output == 0] <- NA
+        discrep <- log(output) - log(time_series)
+        discrep <- (sum(discrep^2, na.rm = T))
+    }
+    else {
+        if (data_type == "biomass_observed") {
+            output = rep(0, length(params@species_params$species))
+            for (iSpecies in 1:length(output)) {
+                output[iSpecies] = sum((sim_error@n[timetorun, 
+                  iSpecies, ] * params@w * params@dw)[params@w >= 
+                  cutoffLow[iSpecies] & cutoffHigh[iSpecies] >= 
+                  params@w])
+            }
+            names(output) <- params@species_params$species
+        }
+        else if (data_type == "yield_observed") {
+            output <- getYield(sim_error)[timetorun, ]
+        }
+        else stop("unknown data type")
+        output[output == 0] <- NA
+        discrep <- log(output) - log(params@species_params[data_type])
+        discrep <- (sum(discrep^2, na.rm = T))
+    }
+    return(discrep)
+}
+
+
+# fastoptim
+
+fastoptim2 <- function (params, vary, vary_df, errorFun, data_type = "yield_observed", 
+    effort = 0, time_series = NULL, spareCores = 1) 
+{trawl <- function(w,W25_S,W50_S,...){
+
+  SR <- W50_S - W25_S
+  S1 <- W50_S*log(3)/SR
+  S2 <- S1 / W50_S
+  sel <-1 / (1 + exp(S1 - S2*w))
+  return(sel)
+}
+
+gillnet<-function(w,W50_B,sigma_B,...){
+  sel<-exp(-(w-W50_B)^2/sigma_B^2)
+  return(sel)
+}
+    noCores <- parallel::detectCores() - spareCores
+    if (noCores < 1) 
+        stop("You should allow at least one core for this operation.")
+    cl <- parallel::makeCluster(noCores, setup_timeout = 0.5)
+    setDefaultCluster(cl = cl)
+    clusterExport(cl, varlist = "cl", envir = environment())
+    clusterEvalQ(cl, {
+        library(mizerExperimental)
+        library(optimParallel)
+    })
+    print(vary_df)
+    optim_result <- optimParallel::optimParallel(par = vary, 
+        fn = errorFun, params = params, data_type = data_type, 
+        effort = effort, vary_df = vary_df, time_series = time_series, 
+        method = "L-BFGS-B", lower = rep(vary_df$lower, vary_df$length), 
+        upper = rep(vary_df$upper, vary_df$length), parallel = list(loginfo = TRUE, 
+            forward = TRUE))
+    stopCluster(cl)
+    return(optim_result)
+}
+
+
+# running getError multiple times 
+
+tic()
+Error <- fastOptim( params = sim3@params,vary = vary, vary_df = vary_df,errorFun = mizerHowTo::getErrorCustom , data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
+toc()
+
+
+saveRDS(Error, "error.rds")
+
+
+```
+
+##Calibrating the model - following Mizerhowto
+
+
+```{r}
+
+# Step 1 - tuning stock recruitment - sim3 has the modelled catches 
+
+
+
+vary <- log10(sim3@params@species_params$R_max)
+## test it
+getError(vary = vary, params = sim3@params, dat = yieldObs_timeVariant)
+
+# create set of params for the optimisation process
+params_optim <- sim3@params
+vary <-  log10(params_optim@species_params$R_max) # variable to explore
+params_optim<-setParams(params_optim)
+# set up workers
+noCores <- detectCores() - 1 # keep some spare core
+cl <- makeCluster(noCores, setup_timeout = 0.5)
+setDefaultCluster(cl = cl)
+clusterExport(cl, as.list(ls()))
+clusterEvalQ(cl, {
+  library(mizerExperimental)
+  library(optimParallel)
+})
+optim_result <- optimParallel::optimParallel(par=vary,getError,params=params_optim, dat = yieldObs_timeVariant, method   ="NULL")
+stopCluster(cl)
+
+
+
+
+
+
+
+
+```
 
 
 ```{r}
