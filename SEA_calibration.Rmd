@@ -1,0 +1,244 @@
+---
+title: SEA_calibration
+editor_options: 
+  chunk_output_type: console
+---
+
+
+##Loading all the required libraries 
+```{r}
+
+rm(list=ls())
+
+library(tidyverse)
+library(mgcv)
+library(scales)
+library(patchwork)
+library(tictoc)
+library(ggplot2)
+library(mizer)
+library(mizerMR)
+library(mizerExperimental)
+library(mizerHowTo)
+
+summarise <-dplyr::summarise
+
+my_theme<-theme_bw()+
+  theme(text = element_text(size = 10), # this should be overwritten by the below
+        plot.title = element_text(size = 10),
+        axis.title = element_text(size = 9),
+        axis.text = element_text(size = 6),
+        legend.title=element_text(size = 9),
+        legend.text=element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.key.size = unit(0.1, "cm"))
+
+
+
+```
+
+## Loading all the required objects and running the script
+
+```{r}
+Gear_params <- readRDS("Gear_params.rds") 
+Species_params <- readRDS("Species_params.rds")
+#sim3 <- readRDS("sim3.rds")
+Fishing_his <- readRDS("Fishing_his.rds") #Effort data 
+yieldObs_timeVariant <- readRDS("yieldObs_timeVariant.rds") #empirical data 
+
+# selectivity function for Gear_params 
+
+trawl <- function(w,W25_S,W50_S,...){
+
+  SR <- W50_S - W25_S
+  S1 <- W50_S*log(3)/SR
+  S2 <- S1 / W50_S
+  sel <-1 / (1 + exp(S1 - S2*w))
+  return(sel)
+}
+
+gillnet<-function(w,W50_B,sigma_B,...){
+  sel<-exp(-(w-W50_B)^2/sigma_B^2)
+  return(sel)
+}
+```
+
+
+
+##Setting up sim objects 
+
+```{r}
+
+params <- newMultispeciesParams(species_params = Species_params, gear_params = Gear_params, kappa = 0.002191539)
+
+sim<- project(params,t_max=500)
+plotBiomass(sim)
+
+params2<- params
+
+params2@initial_n <- sim@n[500,,]
+
+# taking the last time step 
+
+sim2<- project(params2)
+plotBiomass(sim2)
+
+# using historical fishing data to force the model 
+
+
+
+sim3 <- project(params2, effort = Fishing_his)
+plotBiomass(sim3)
+
+#saveRDS(sim3, "sim3.rds")
+
+
+
+```
+
+
+## getting model catches from sim 3 and the observed catches from cami's code and formatting them to match the time series
+
+```{r}
+# Modelled catches 
+
+Model_catches <- getYield(sim3)
+plotYield(sim3)
+write.csv(Model_catches, file = "model_catches.csv")
+mod_catches <- read_csv("model_catches.csv")
+mod_catches<- mod_catches %>% 
+  filter(Year >= 1995)
+
+# Empirical catches 
+
+names <- colnames(mod_catches)
+colnames(yieldObs_timeVariant)<- names 
+
+# plotting empirical catches vs modelled catches 
+
+catch <- reshape2::melt(mod_catches,"Year")
+catch$type<- "model"
+
+catch2 <- reshape2::melt(yieldObs_timeVariant,"Year")
+catch2$type<- "empirical"
+
+plot_catch <- rbind(catch, catch2)
+plot_catch$variable<- as.character(plot_catch$variable)
+
+#saveRDS(plot_catch, "plot_catch.rds")
+
+colnames(plot_catch) <- c("Time", "Spp", "Catch", "Type")
+
+time_break <- seq(unique(plot_catch$Time)[1],
+                  unique(plot_catch$Time)[length(unique(plot_catch$Time))],
+                  by=2)
+
+time_break2 <- seq(unique(plot_catch$Time)[1],
+                  unique(plot_catch$Time)[length(unique(plot_catch$Time))],
+                  by=3)
+
+
+fig <- ggplot(data = plot_catch, aes(x = Time, y = Catch, color = Spp, linetype= Type)) +
+  geom_line( size = 1) +
+  scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = time_break)+
+  theme(legend.position = "bottom")+
+  labs(title = "Modelled Vs Emperical Catches") 
+
+fig
+# plotting for all species 
+
+fig2 <- ggplot(data = plot_catch, aes(x = Time, y = Catch, linetype= Type)) +
+  geom_line( size = 1) +
+ #scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = time_break2)+
+  theme(legend.position = "bottom")+
+  facet_wrap(~Spp,scales = "free")+
+  scale_linetype_manual(values = c("empirical" = "dotted", "model" = "solid"))+
+  labs(title = "Modelled Vs Emperical Catches") 
+
+fig2
+
+
+
+
+
+```
+
+##Using getError and fastOptim for calibration 
+
+```{r}
+
+
+vary_df <- data.frame("name" = "catchability", "length" = 19, "lower" = 1e-8, "upper" = 1, "slot" = "gear_params" , "unit" = "linear")
+
+vary <- sim3@params@gear_params$catchability
+
+
+getErrorCustom(vary_df = vary_df, vary = vary, params = sim3@params, data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
+
+
+# creating fastoptim2 function 
+
+fastOptim2 <- function (params, vary, vary_df, errorFun, data_type = "yield_observed", 
+    effort = 0, time_series = NULL, spareCores = 1) 
+
+{
+    noCores <- parallel::detectCores() - spareCores
+    if (noCores < 1) 
+        stop("You should allow at least one core for this operation.")
+    cl <- parallel::makeCluster(noCores, setup_timeout = 0.5)
+    setDefaultCluster(cl = cl)
+    clusterExport(cl, varlist = list("cl","trawl","gillnet"), envir = environment())
+    clusterEvalQ(cl, {
+        library(mizerExperimental)
+        library(optimParallel)
+    })
+    print(vary_df)
+    optim_result <- optimParallel::optimParallel(par = vary, 
+        fn = errorFun, params = params, data_type = data_type, 
+        effort = effort, vary_df = vary_df, time_series = time_series, 
+        method = "L-BFGS-B", lower = rep(vary_df$lower, vary_df$length), 
+        upper = rep(vary_df$upper, vary_df$length), parallel = list(loginfo = TRUE, 
+            forward = TRUE))
+    stopCluster(cl)
+    return(optim_result)
+    {trawl <- function(w,W25_S,W50_S,...){
+
+  SR <- W50_S - W25_S
+  S1 <- W50_S*log(3)/SR
+  S2 <- S1 / W50_S
+  sel <-1 / (1 + exp(S1 - S2*w))
+  return(sel)
+}
+
+gillnet<-function(w,W50_B,sigma_B,...){
+  sel<-exp(-(w-W50_B)^2/sigma_B^2)
+  return(sel)
+}}
+}
+
+
+# running getError multiple times to reproduce catches that represent empirical catches
+
+tic()
+Error <- fastOptim2( params = sim3@params,vary = vary, vary_df = vary_df,errorFun = mizerHowTo::getErrorCustom , data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
+toc()
+
+
+saveRDS(Error, "error.rds")
+
+
+# Replacing the catchability values in sim3 with the par values obtained using fastoptim and running the script again from line 91 
+
+params2@gear_params$catchability <- Error$par
+
+# creating new sim object with new catchability values and saving it to sim4 
+
+#sim4 <- sim3
+#saveRDS(sim4,"sim4.rds")
+
+
+```
+

@@ -97,8 +97,8 @@ Gear_params$gear<- Fishing_g$gear
 Gear_params$Gear<-Fishing_g$Gear
 Gear_params$FAO_demand<-Fishing_g$FAO_demand
 
-
-
+saveRDS(Gear_params, "Gear_params.rds")
+saveRDS(Species_params, "Species_params.rds")
 
 ```
 
@@ -113,7 +113,6 @@ Gear_params$FAO_demand<-Fishing_g$FAO_demand
 
 
 params <- newMultispeciesParams(species_params = Species_params, gear_params = Gear_params, kappa = 0.002191539)
-
 
 ```
 
@@ -289,6 +288,7 @@ Fishing_his <- readRDS("Fishing_his.rds")
 
 ```{r}
 
+
 params2<- newMultispeciesParams( species_params = Species_params, gear_params = Gear_params, kappa = 0.002191539)
 
 sim<- project(params2,t_max=500)
@@ -304,6 +304,9 @@ sim2<- project(params3)
 plotBiomass(sim2)
 
 #Fishing_his
+
+
+
 
 sim3 <- project(params3, effort = Fishing_his)
 plotBiomass(sim3)
@@ -494,7 +497,7 @@ getErrorCustom2(vary_df = vary_df, vary = vary, params = sim3@params, data_type 
 
 getErrorCustom2 <- function (vary, vary_df, params, data_type = "biomass_observed", 
     effort = 0, time_series = NULL, tol = 0.001, timetorun = 10) 
-{ trawl <- function(w,W25_S,W50_S,...){
+{trawl <- function(w,W25_S,W50_S,...){
 
   SR <- W50_S - W25_S
   S1 <- W50_S*log(3)/SR
@@ -507,6 +510,7 @@ gillnet<-function(w,W50_B,sigma_B,...){
   sel<-exp(-(w-W50_B)^2/sigma_B^2)
   return(sel)
 }
+
     start = 1
     for (iTrait in 1:nrow(vary_df)) {
         end = start + vary_df$length[iTrait] - 1
@@ -585,30 +589,18 @@ gillnet<-function(w,W50_B,sigma_B,...){
     return(discrep)
 }
 
-
 # fastoptim
 
 fastoptim2 <- function (params, vary, vary_df, errorFun, data_type = "yield_observed", 
     effort = 0, time_series = NULL, spareCores = 1) 
-{trawl <- function(w,W25_S,W50_S,...){
 
-  SR <- W50_S - W25_S
-  S1 <- W50_S*log(3)/SR
-  S2 <- S1 / W50_S
-  sel <-1 / (1 + exp(S1 - S2*w))
-  return(sel)
-}
-
-gillnet<-function(w,W50_B,sigma_B,...){
-  sel<-exp(-(w-W50_B)^2/sigma_B^2)
-  return(sel)
-}
+{
     noCores <- parallel::detectCores() - spareCores
     if (noCores < 1) 
         stop("You should allow at least one core for this operation.")
     cl <- parallel::makeCluster(noCores, setup_timeout = 0.5)
     setDefaultCluster(cl = cl)
-    clusterExport(cl, varlist = "cl", envir = environment())
+    clusterExport(cl, varlist = list("cl","trawl","gillnet"), envir = environment())
     clusterEvalQ(cl, {
         library(mizerExperimental)
         library(optimParallel)
@@ -622,13 +614,26 @@ gillnet<-function(w,W50_B,sigma_B,...){
             forward = TRUE))
     stopCluster(cl)
     return(optim_result)
+    {trawl <- function(w,W25_S,W50_S,...){
+
+  SR <- W50_S - W25_S
+  S1 <- W50_S*log(3)/SR
+  S2 <- S1 / W50_S
+  sel <-1 / (1 + exp(S1 - S2*w))
+  return(sel)
+}
+
+gillnet<-function(w,W50_B,sigma_B,...){
+  sel<-exp(-(w-W50_B)^2/sigma_B^2)
+  return(sel)
+}}
 }
 
 
 # running getError multiple times 
 
 tic()
-Error <- fastOptim( params = sim3@params,vary = vary, vary_df = vary_df,errorFun = mizerHowTo::getErrorCustom , data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
+Error <- fastoptim2( params = sim3@params,vary = vary, vary_df = vary_df,errorFun = mizerHowTo::getErrorCustom , data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
 toc()
 
 
