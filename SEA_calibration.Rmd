@@ -45,7 +45,7 @@ Gear_params <- readRDS("Gear_params.rds")
 Species_params <- readRDS("Species_params.rds")
 #sim3 <- readRDS("sim3.rds")
 Fishing_his <- readRDS("Fishing_his.rds") #Effort data 
-yieldObs_timeVariant <- readRDS("yieldObs_timeVariant.rds") #empirical data 
+yieldObs_timeVariant <- readRDS("yieldObs_timeVariant.rds") #empirical catch data 
 
 # selectivity function for Gear_params 
 
@@ -98,7 +98,7 @@ plotBiomass(sim3)
 ```
 
 
-## getting model catches from sim 3 and the observed catches from cami's code and formatting them to match the time series
+## getting model catches from sim 3 and the observed catches from cami's code and formatting them to match the time series and plotting 
 
 ```{r}
 # Modelled catches 
@@ -156,11 +156,13 @@ fig2 <- ggplot(data = plot_catch, aes(x = Time, y = Catch, linetype= Type)) +
   theme(legend.position = "bottom")+
   facet_wrap(~Spp,scales = "free")+
   scale_linetype_manual(values = c("empirical" = "dotted", "model" = "solid"))+
-  labs(title = "Modelled Vs Emperical Catches") 
+  labs(title = "Modelled Vs Empirical Catches") 
 
 fig2
 
-
+jpeg("modelled_vs_empirical.jpg", width = 12.5, height = 8, units = "in", res = 300, bg = "transparent")
+fig2
+dev.off()
 
 
 
@@ -220,7 +222,7 @@ gillnet<-function(w,W50_B,sigma_B,...){
 }
 
 
-# running getError multiple times to reproduce catches that represent empirical catches
+# running getError and fastOptim2 multiple times to reproduce catches that represent empirical catches
 
 tic()
 Error <- fastOptim2( params = sim3@params,vary = vary, vary_df = vary_df,errorFun = mizerHowTo::getErrorCustom , data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
