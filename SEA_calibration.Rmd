@@ -172,6 +172,7 @@ dev.off()
 
 ```{r}
 
+# 1. Using catchability
 
 vary_df <- data.frame("name" = "catchability", "length" = 19, "lower" = 1e-8, "upper" = 1, "slot" = "gear_params" , "unit" = "linear")
 
@@ -244,3 +245,87 @@ params2@gear_params$catchability <- Error$par
 
 ```
 
+
+## Second round of calibration
+
+```{r}
+## 2. Using R_max 
+
+sim4<- readRDS("sim4.rds")
+
+vary_df <- data.frame("name" = "R_max", "length" = 19, "lower" = 1e-8, "upper" = 1, "slot" = "species_params" , "unit" = "linear")
+
+vary <- sim4@params@species_params$R_max 
+
+
+getErrorCustom(vary_df = vary_df, vary = vary, params = sim4@params, data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
+
+tic()
+Error2 <- fastOptim2( params = sim4@params,vary = vary, vary_df = vary_df,errorFun = mizerHowTo::getErrorCustom , data_type = "yield_observed", effort = Fishing_his, time_series = yieldObs_timeVariant)
+toc()
+
+
+saveRDS(Error2, "error2.rds")
+sim4@params@species_params$R_max<- Error2$par
+
+
+# plotting using new R-max values 
+
+Model_catches <- getYield(sim4)
+plotYield(sim4)
+write.csv(Model_catches, file = "model_catches2.csv")
+mod_catches2 <- read_csv("model_catches2.csv")
+mod_catches2<- mod_catches2 %>% 
+  filter(Year >= 1995)
+
+# Empirical catches 
+
+names <- colnames(mod_catches2)
+colnames(yieldObs_timeVariant)<- names 
+
+# plotting empirical catches vs modelled catches 
+
+catch <- reshape2::melt(mod_catches2,"Year")
+catch$type<- "model"
+
+catch2 <- reshape2::melt(yieldObs_timeVariant,"Year")
+catch2$type<- "empirical"
+
+plot_catch2 <- rbind(catch, catch2)
+plot_catch2$variable<- as.character(plot_catch2$variable)
+
+#saveRDS(plot_catch, "plot_catch.rds")
+
+colnames(plot_catch2) <- c("Time", "Spp", "Catch", "Type")
+
+time_break <- seq(unique(plot_catch2$Time)[1],
+                  unique(plot_catch2$Time)[length(unique(plot_catch2$Time))],
+                  by=2)
+
+time_break2 <- seq(unique(plot_catch2$Time)[1],
+                  unique(plot_catch2$Time)[length(unique(plot_catch2$Time))],
+                  by=3)
+
+
+fig <- ggplot(data = plot_catch2, aes(x = Time, y = Catch, color = Spp, linetype= Type)) +
+  geom_line( size = 1) +
+  scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = time_break)+
+  theme(legend.position = "bottom")+
+  labs(title = "Modelled Vs Emperical Catches") 
+
+fig
+# plotting for all species 
+
+fig2 <- ggplot(data = plot_catch2, aes(x = Time, y = Catch, linetype= Type)) +
+  geom_line( size = 1) +
+ #scale_y_continuous(trans = "log10")+
+  scale_x_continuous(breaks = time_break2)+
+  theme(legend.position = "bottom")+
+  facet_wrap(~Spp,scales = "free")+
+  scale_linetype_manual(values = c("empirical" = "dotted", "model" = "solid"))+
+  labs(title = "Modelled Vs Empirical Catches") 
+
+fig2
+
+```
